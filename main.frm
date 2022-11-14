@@ -4,9 +4,9 @@ Object = "{C932BA88-4374-101B-A56C-00AA003668DC}#1.1#0"; "MSMASK32.OCX"
 Begin VB.Form main 
    BorderStyle     =   1  'Fixed Single
    Caption         =   "Stardisk's Player"
-   ClientHeight    =   7185
+   ClientHeight    =   5700
    ClientLeft      =   150
-   ClientTop       =   780
+   ClientTop       =   840
    ClientWidth     =   4680
    BeginProperty Font 
       Name            =   "Tahoma"
@@ -20,15 +20,27 @@ Begin VB.Form main
    Icon            =   "main.frx":0000
    LinkTopic       =   "Form1"
    MaxButton       =   0   'False
-   ScaleHeight     =   479
+   ScaleHeight     =   380
    ScaleMode       =   3  'Pixel
    ScaleWidth      =   312
    StartUpPosition =   3  'Windows Default
-   Begin VB.Timer tmrLoading 
-      Enabled         =   0   'False
-      Interval        =   500
-      Left            =   3000
-      Top             =   6720
+   Begin VB.CheckBox chkRepeat 
+      Caption         =   "q"
+      BeginProperty Font 
+         Name            =   "Webdings"
+         Size            =   15.75
+         Charset         =   2
+         Weight          =   400
+         Underline       =   0   'False
+         Italic          =   0   'False
+         Strikethrough   =   0   'False
+      EndProperty
+      Height          =   375
+      Left            =   2520
+      Style           =   1  'Graphical
+      TabIndex        =   25
+      Top             =   4680
+      Width           =   375
    End
    Begin VB.HScrollBar hsprogress 
       Height          =   255
@@ -48,11 +60,11 @@ Begin VB.Form main
    Begin VB.HScrollBar hsvolume 
       Height          =   255
       LargeChange     =   10
-      Left            =   2520
+      Left            =   3000
       Max             =   100
       TabIndex        =   8
       Top             =   4680
-      Width           =   2055
+      Width           =   1575
    End
    Begin VB.CommandButton cmdnext 
       Caption         =   ":"
@@ -127,15 +139,16 @@ Begin VB.Form main
    Begin VB.Timer Timer1 
       Enabled         =   0   'False
       Interval        =   1000
-      Left            =   2520
-      Top             =   6720
+      Left            =   4200
+      Top             =   240
    End
-   Begin VB.Frame Frame1 
+   Begin VB.Frame playPartWrapper 
       Caption         =   "Играть кусок"
       Height          =   1935
       Left            =   120
       TabIndex        =   12
       Top             =   5160
+      Visible         =   0   'False
       Width           =   2295
       Begin VB.CheckBox cmdApply 
          Caption         =   "Включить повтор"
@@ -221,7 +234,7 @@ Begin VB.Form main
    Begin VB.FileListBox File1 
       Height          =   2235
       Left            =   120
-      Pattern         =   "*.mp3;*.wma;*.ogg;*.wav"
+      Pattern         =   "*.mp3;*.wma;*.ogg;*.wav;*.m3u"
       TabIndex        =   2
       Top             =   1800
       Width           =   4455
@@ -239,6 +252,18 @@ Begin VB.Form main
       TabIndex        =   0
       Top             =   0
       Width           =   3975
+   End
+   Begin VB.Label lblTitle 
+      Appearance      =   0  'Flat
+      BackColor       =   &H80000005&
+      BorderStyle     =   1  'Fixed Single
+      ForeColor       =   &H80000008&
+      Height          =   450
+      Left            =   120
+      TabIndex        =   18
+      Top             =   5160
+      Width           =   2895
+      WordWrap        =   -1  'True
    End
    Begin VB.Label lblSize 
       AutoSize        =   -1  'True
@@ -269,14 +294,6 @@ Begin VB.Form main
       TabIndex        =   22
       Top             =   4080
       Width           =   645
-   End
-   Begin VB.Label lblTitle 
-      Height          =   1575
-      Left            =   2520
-      TabIndex        =   18
-      Top             =   5520
-      Width           =   2055
-      WordWrap        =   -1  'True
    End
    Begin VB.Label lblVolume 
       Alignment       =   1  'Right Justify
@@ -355,6 +372,10 @@ Begin VB.Form main
          Caption         =   "Удалить выделенный файл"
          Shortcut        =   {DEL}
       End
+      Begin VB.Menu mnuOpenLocation 
+         Caption         =   "Открыть расположение файла"
+         Shortcut        =   ^E
+      End
       Begin VB.Menu mnuSep2 
          Caption         =   "-"
       End
@@ -363,6 +384,21 @@ Begin VB.Form main
          Shortcut        =   ^F
       End
       Begin VB.Menu mnuSep0 
+         Caption         =   "-"
+      End
+      Begin VB.Menu mnuShowPlayPart 
+         Caption         =   "Показать ""Играть кусок"""
+      End
+      Begin VB.Menu mnuShowTrackInCaption 
+         Caption         =   "Название трека в заголовке"
+      End
+      Begin VB.Menu mnuMinimizeToCompact 
+         Caption         =   "Сворачивать в компактный режи"
+      End
+      Begin VB.Menu mnuCloseToCompact 
+         Caption         =   "Закрывать в компактный режим"
+      End
+      Begin VB.Menu mnuSep3 
          Caption         =   "-"
       End
       Begin VB.Menu mnuGotoCompact 
@@ -389,7 +425,7 @@ Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 Option Explicit
 Private Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)     'для sleepов
-Dim repeating, playing As Boolean                                   'переменные для флагов воспроизведения и повтора
+Dim repeating, playing, showTrackInCaption As Boolean                                   'переменные для флагов воспроизведения и повтора
 Dim starttime, endtime As Integer                                   'начальное и конечное время воспроизведения
 Public presets As String                                            'путь к настройкам
 Dim repeatlist As String                                            'путь к списку начал и концов повторяемых кусков
@@ -399,7 +435,7 @@ Dim tmpPosition As Variant                                          'переменная 
 Private Sub ButtonColor()                                           'задать цвет кнопок
     If wmp.playState = 3 Or wmp.playState = 9 Then cmdPlay.BackColor = "&H00C0C0C0": cmdPause.BackColor = "&H8000000F": cmdStop.BackColor = "&H8000000F" ' подстветить воспроизведение
     If wmp.playState = 2 Then cmdPlay.BackColor = "&H8000000F": cmdPause.BackColor = "&H00C0C0C0": cmdStop.BackColor = "&H8000000F"                      ' подсветить паузу
-    If wmp.playState < 2 Then cmdPlay.BackColor = "&H8000000F": cmdPause.BackColor = "&H8000000F": cmdStop.BackColor = "&H00C0C0C0"                      ' подсветить стоп
+    If wmp.playState < 2 Or wmp.playState = 8 Then cmdPlay.BackColor = "&H8000000F": cmdPause.BackColor = "&H8000000F": cmdStop.BackColor = "&H00C0C0C0"                      ' подсветить стоп
 End Sub
 
 Private Sub TimeToSeconds()                                         'преобразование времени мм:сс в секунды
@@ -412,9 +448,8 @@ Private Sub SecondsToTime()                                         'преобразова
     txtEndTime = Right(TimeSerial(0, 0, endtime), 5)
 End Sub
 
-Private Sub ActionsOnPlay(loading As Boolean)                                         'действия при воспроизведении
+Private Sub ActionsOnPlay()                                                 'действия при воспроизведении
 On Error Resume Next
-    If loading = True Then GoTo loadsuccess                                     'для таймера ожидания загрузки
     lblTitle = "": lblBitrate = ""                                          'убираем название и битрейт, которые могли остаться на форме от предыдущего трека
     TimeToSeconds                                                           'переводим мм:сс в секунды
     cmdApply.Value = 0                                                      'выключить повтор
@@ -422,19 +457,15 @@ On Error Resume Next
     lblItems = File1.ListIndex + 1 & " / " & File1.ListCount                'показываем номер текущего элемента и общее число элементов
     lblSize = Format(FileLen(Dir1.Path & "\" & File1.filename) / 1048576, "0.00") & " МБ"   'показываем вес файла
     playing = True                                                          'включаем флаг воспроизведения
-    tmrLoading.Enabled = True                                               'запускаем таймер ожидания загрузки данных
-    Exit Sub                                                                'выходим
-loadsuccess:                                                                'когда таймер сработает, выполнение кода продолжится отсюда
-    With hsprogress                                                 'обрабатываем бегунок воспроизвения
-        .Value = 0                                                      'ставим его на начало
-        .Max = CInt(wmp.currentMedia.duration)                          'высчитываем максимальное значение бегунка по длине песни
-    End With
+    hsprogress.Value = 0
 
     If wmp.currentMedia.getItemInfo("Author") <> "" Then                                                    'если у песни тег автор не пустой
         lblTitle = wmp.currentMedia.getItemInfo("Title") & " - " & wmp.currentMedia.getItemInfo("Author")       'пишем название песни и автора
     Else                                                                                                    'иначе
         lblTitle = wmp.currentMedia.getItemInfo("Title")                                                        'пишем только название песни, при пустом теге туда подставляется имя файла
     End If
+    
+    If showTrackInCaption = True Then main.Caption = lblTitle.Caption
     
     lblBitrate = Format(wmp.currentMedia.getItemInfo("bitrate") / 1000, "#") & " кбит/с"
     
@@ -456,8 +487,10 @@ End Sub
 
 Private Sub Form_Resize()                                                   'переключение в компактный режим
     If Me.WindowState = 1 Then                                                  'если главное окно сворачивается
-        Me.Hide                                                                     'скрываем его
-        compact.Show                                                                'показываем компактный режим
+        If mnuMinimizeToCompact.Checked = True Then
+            Me.Hide                                                                     'скрываем его
+            compact.Show                                                                'показываем компактный режим
+        End If
     End If
 End Sub
 
@@ -466,16 +499,39 @@ Private Sub mnuAbout_Click()                                        'меню "о про
     "Автор: Александров Олег Игоревич aka Stardisk", vbInformation
 End Sub
 
+Private Sub mnuCloseToCompact_Click()
+    If mnuCloseToCompact.Checked = False Then
+        mnuCloseToCompact.Checked = True
+        WriteINIKey "View", "CloseToCompact", "1", presets
+    Else
+        mnuCloseToCompact.Checked = False
+        WriteINIKey "View", "CloseToCompact", "0", presets
+    End If
+End Sub
+
 Private Sub mnuCompactVolume_Click()                                'меню установки шага громкости для кнопок в компактном режиме
     Dim tmp As Variant
     tmp = ReadINIKey("General", "CompactStepVolume", presets)
     tmp = InputBox("Укажите, на сколько процентов будет изменяться уровень громкости при нажатии кнопок управления громкостью в компактном режиме:", , tmp)
     If tmp = "" Then Exit Sub
+    If IsNumeric(tmp) = False Then MsgBox "Введите число": Exit Sub
+    If tmp < 1 Or tmp > 100 Then MsgBox "Число должно быть от 1 до 100": Exit Sub
+    
     WriteINIKey "General", "CompactStepVolume", CInt(tmp), presets
 End Sub
 
 Private Sub mnuGotoCompact_Click()                                  'меню переключения в компактный режим
     Unload Me
+End Sub
+
+Private Sub mnuMinimizeToCompact_Click()
+    If mnuMinimizeToCompact.Checked = False Then
+        mnuMinimizeToCompact.Checked = True
+        WriteINIKey "View", "MinimizeToCompact", "1", presets
+    Else
+        mnuMinimizeToCompact.Checked = False
+        WriteINIKey "View", "MinimizeToCompact", "0", presets
+    End If
 End Sub
 
 Private Sub mnuMove_Click()
@@ -507,6 +563,10 @@ err:
     MsgBox "Не удалось переместить файл."
 End Sub
 
+Private Sub mnuOpenLocation_Click()
+    Shell "explorer.exe /select, " & wmp.URL, vbNormalFocus
+End Sub
+
 Private Sub mnuRename_Click()                                       'меню переименования файла
 On Error Resume Next
     If File1.ListIndex = -1 Then Exit Sub                           'если никакой файл не выбран, выходим
@@ -529,6 +589,7 @@ Public Sub cmdstop_Click()                                          'кнопка оста
     wmp.Controls.stop                                               'останавливаем воспроизведение
     playing = False                                                 'убираем флаг воспроизведения
     ButtonColor                                                     'меняем кнопкам цвет
+    If showTrackInCaption = True Then main.Caption = "Stardisk's Player"
 End Sub
 
 Private Sub cmdApply_Click()                                        'кнопка повтора
@@ -571,6 +632,7 @@ Public Sub cmdplay_Click()                                      'кнопка вопроизв
     wmp.Controls.play
     playing = True
     ButtonColor
+    If showTrackInCaption = True Then main.Caption = lblTitle.Caption
 End Sub
 
 Public Sub cmdprev_Click()
@@ -585,7 +647,7 @@ err:
 End Sub
 
 Private Sub mnuClose_Click()
-    If MsgBox("Выйти?", vbYesNo) = vbYes Then End
+    End
 End Sub
 
 Private Sub mnuDelete_Click()                                           'меню удаления файла
@@ -633,7 +695,7 @@ err:
 End Sub
 
 Private Sub File1_Click()                                               'клик по файлу в окне программы
-    If File1.ListIndex > -1 And File1.ListIndex < File1.ListCount Then ActionsOnPlay (False) 'если номер элемента списка корректный, то выполняем действия при воспроизведении - загрузка файла и т.п.
+    If File1.ListIndex > -1 And File1.ListIndex < File1.ListCount Then ActionsOnPlay 'если номер элемента списка корректный, то выполняем действия при воспроизведении - загрузка файла и т.п.
 End Sub
 
 Private Sub Form_Load()                                                 'действия при запуске
@@ -648,12 +710,18 @@ On Error Resume Next
     hsvolume.Value = ReadINIKey("General", "Volume", presets)           'устанавливаем бегунку громкости значение из настроек
     wmp.settings.volume = hsvolume.Value                                'устанавливаем соответствующую громкость
     If ReadINIKey("General", "CompactStepVolume", presets) = "" Then WriteINIKey "General", "CompactStepVolume", "5", presets 'если в настройках не указан шаг громкости кнопкам компактного режима, устанавливаем по умолчанию 5
+    If ReadINIKey("View", "ShowPlayPart", presets) = "1" Then mnuShowPlayPart_Click
+    If ReadINIKey("View", "ShowTrackInCaption", presets) = "1" Then mnuShowTrackInCaption_Click
+    If ReadINIKey("View", "MinimizeToCompact", presets) = "1" Then mnuMinimizeToCompact_Click
+    If ReadINIKey("View", "CloseToCompact", presets) = "1" Then mnuCloseToCompact_Click
 End Sub
 
 Private Sub Form_Unload(Cancel As Integer)                              'если главное окно программы закрывают
-    Cancel = 1                                                          'отмена завершения программы
-    Me.Hide                                                             'прячем форму
-    compact.Show                                                        'показываем компактный режим
+    If mnuCloseToCompact.Checked = True Then
+        Cancel = 1                                                          'отмена завершения программы
+        Me.Hide                                                             'прячем форму
+        compact.Show                                                        'показываем компактный режим
+    End If
 End Sub
 
 Private Sub hsprogress_Scroll()                                         'изменение позиции воспроизведения движением бегунка
@@ -681,12 +749,63 @@ Private Sub mnuSearch_Click()                                           'поиск ф
     MsgBox "Не найдено"                                                 'пишем не найдено, если ничего не нашлось
 End Sub
 
+Private Sub mnuShowPlayPart_Click()
+    If mnuShowPlayPart.Checked = True Then
+        mnuShowPlayPart.Checked = False
+        WriteINIKey "View", "ShowPlayPart", "0", presets
+        playPartWrapper.Visible = False
+        lblTitle.Left = 8
+        lblTitle.Top = 344
+        lblTitle.Width = 193
+        lblTitle.Height = 30
+        lblTitle.Alignment = 0
+        main.Height = 6480
+        If repeating = True Then
+            cmdApply.Value = 0
+            cmdApply_Click
+        End If
+    Else
+        mnuShowPlayPart.Checked = True
+        WriteINIKey "View", "ShowPlayPart", "1", presets
+        playPartWrapper.Visible = True
+        lblTitle.Left = 168
+        lblTitle.Top = 368
+        lblTitle.Width = 137
+        lblTitle.Height = 105
+        lblTitle.Alignment = 1
+        main.Height = 8000
+    End If
+End Sub
+
+Private Sub mnuShowTrackInCaption_Click()
+    If mnuShowTrackInCaption.Checked = False Then
+        mnuShowTrackInCaption.Checked = True
+        WriteINIKey "View", "ShowTrackInCaption", "1", presets
+        showTrackInCaption = True
+        If playing = True Then main.Caption = lblTitle.Caption
+    Else
+        mnuShowTrackInCaption.Checked = False
+        WriteINIKey "View", "ShowTrackInCaption", "0", presets
+        showTrackInCaption = False
+        If playing = True Then main.Caption = "Stardisk's Player"
+    End If
+End Sub
+
 Private Sub Timer1_Timer()                                              'таймер отображения времени воспроизведения и движения бегунка прогресса
 'On Error GoTo err
     lblTiming.Caption = wmp.Controls.currentPositionString & " / " & wmp.currentMedia.durationString ' показываем текущее положение воспроизведения и общую длину
+    hsprogress.Max = wmp.currentMedia.duration
     If hsprogress.Max <> 0 Then hsprogress.Value = CInt(wmp.Controls.currentPosition)             'двигаем бегунок
     
-    If repeating = False And playing = True And wmp.playState = 1 Then cmdnext_Click    'если флаг повтора отключен, а воспроизведения включен, то при остановке воспроизведения из-за окончания трека нажимаем кнопку "след.трек"
+    If repeating = False And playing = True And wmp.playState = 1 Then 'если флаг повтора отключен, а воспроизведения включен
+        If chkRepeat.Value = 1 Then
+            wmp.Controls.currentPosition = 0                    'если стоит галка "повторять композицию", то переводим воспроизведение на начало
+            wmp.Controls.play
+        Else
+            cmdnext_Click                                                'а иначе при остановке воспроизведения из-за окончания трека нажимаем кнопку "след.трек"
+        End If
+    End If
+    
     If repeating = True And playing = True Then                         'если флаги повтора и воспроизведения включены
         If endtime <> 0 Then                                      'если время окончания не равно нулю
             If wmp.Controls.currentPosition >= endtime Then wmp.Controls.currentPosition = starttime     'если воспроизведение превысило время окончания, перескакиваем на начало воспроизведения
@@ -697,9 +816,4 @@ Private Sub Timer1_Timer()                                              'таймер 
     Exit Sub
 err:
     lblTiming.Caption = "--.-- / --.--"                                 'пишем черточки, если не удается получить время воспроизведения
-End Sub
-
-Private Sub tmrLoading_Timer()
-    ActionsOnPlay (True)
-    tmrLoading.Enabled = False
 End Sub

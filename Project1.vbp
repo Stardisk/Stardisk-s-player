@@ -1,7 +1,7 @@
 Type=Exe
-Reference=*\G{00020430-0000-0000-C000-000000000046}#2.0#0#C:\Windows\SysWOW64\stdole2.tlb#OLE Automation
+Reference=*\G{00020430-0000-0000-C000-000000000046}#2.0#0#C:\WINDOWS\system32\stdole2.tlb#OLE Automation
 Object={6BF52A50-394A-11D3-B153-00C04F79FAA6}#1.0#0; wmp.dll
-Reference=*\G{F5078F18-C551-11D3-89B9-0000F81FE221}#2.6#0#C:\Windows\System32\msxml6.dll#Microsoft XML, v2.6
+Reference=*\G{F5078F18-C551-11D3-89B9-0000F81FE221}#2.6#0#C:\WINDOWS\system32\msxml2.dll#Microsoft XML, v2.6
 Object={C932BA88-4374-101B-A56C-00AA003668DC}#1.1#0; MSMASK32.OCX
 Form=main.frm
 Module=ini; ini.bas

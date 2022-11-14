@@ -1,13 +1,14 @@
 VERSION 5.00
 Begin VB.Form compact 
-   BackColor       =   &H00E0E0E0&
    BorderStyle     =   0  'None
-   Caption         =   "Form1"
+   Caption         =   "Stardisk's Player Compact Mode"
    ClientHeight    =   255
    ClientLeft      =   0
    ClientTop       =   0
    ClientWidth     =   4515
    LinkTopic       =   "Form1"
+   MaxButton       =   0   'False
+   MinButton       =   0   'False
    ScaleHeight     =   17
    ScaleMode       =   3  'Pixel
    ScaleWidth      =   301
@@ -243,7 +244,7 @@ Dim step As Long
 Private Sub ButtonColor()
     If main.wmp.playState = 3 Or main.wmp.playState = 9 Then Command1.BackColor = "&H00C0C0C0": Command2.BackColor = "&H8000000F": Command3.BackColor = "&H8000000F"
     If main.wmp.playState = 2 Then Command1.BackColor = "&H8000000F": Command2.BackColor = "&H00C0C0C0": Command3.BackColor = "&H8000000F"
-    If main.wmp.playState < 2 Then Command1.BackColor = "&H8000000F": Command2.BackColor = "&H8000000F": Command3.BackColor = "&H00C0C0C0"
+    If main.wmp.playState < 2 Or main.wmp.playState = 8 Then Command1.BackColor = "&H8000000F": Command2.BackColor = "&H8000000F": Command3.BackColor = "&H00C0C0C0"
 End Sub
 
 Private Sub SavePosition()
