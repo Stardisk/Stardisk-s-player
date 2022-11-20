@@ -18,7 +18,7 @@ It was written in 2013 or something, but in 2022 I've found it's sources, fix so
 - Works in any Windows version.
 - Integrated file explorer. Just select a folder and player will play all the mp3 files inside.
 - Fast file management - you can move, rename or delete mp3-file which is currently playing. Quite useful when you try to deal with folder with a lot of different mp3-files, "Downloads" for example.
-- You can access local network resources by clicking "..." button near the drive selector and type in the window something like "\\192.168.88.247\music".
+- You can access local network resources by clicking "..." button near the drive selector and type in the window something like "\\\\192.168.88.247\music".
 - Has compact mode which is always on top, movable and takes very little space on the screen.
 - Strange function - "Play a part". You can choose start time and end time of any file and loop this part. If you don't need, you can hide it.
 <br><br>
