@@ -1,2 +1,8 @@
 # Preserve the original bytes of archived VB6 sources and resources.
 legacy/** -text
+
+# Keep twinBASIC source readable in Git and restore IDE line endings.
+twinbasic/source/**/*.twin text eol=crlf
+twinbasic/source/**/*.bas text eol=crlf
+twinbasic/source/**/*.tbform text eol=lf
+twinbasic/source/Settings text eol=lf

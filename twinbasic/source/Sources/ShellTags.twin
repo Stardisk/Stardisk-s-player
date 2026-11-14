@@ -1,0 +1,117 @@
+' Read-only Windows Shell properties, independent of the playback backend.
+[InterfaceId("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+[OleAutomation(False)]
+[ComImport]
+Interface IPlayerTagStore Extends stdole.IUnknown
+    [PreserveSig]
+    Function GetCount(ByRef count As Long) As Long
+    [PreserveSig]
+    Function GetAt(ByVal index As Long, ByRef key As ShellTagKey) As Long
+    [PreserveSig]
+    Function GetValue(ByRef key As ShellTagKey, ByRef value As ShellTagValue) As Long
+End Interface
+
+Module ShellTags
+    Public Type ShellTagGuid
+        part1 As Long
+        part2 As Long
+        part3 As Long
+        part4 As Long
+    End Type
+
+    Public Type ShellTagKey
+        format As ShellTagGuid
+        propertyId As Long
+    End Type
+
+    ' PROPVARIANT numeric union begins at byte 8; allocation fits x86 and x64.
+    Public Type ShellTagValue
+        vt As Integer
+        reserved1 As Integer
+        reserved2 As Integer
+        reserved3 As Integer
+        data As LongLong
+        padding As LongLong
+    End Type
+
+    Private Declare Function ShellGetStore Lib "shell32.dll" Alias "SHGetPropertyStoreFromParsingName" (ByVal filename As LongPtr, ByVal bind As LongPtr, ByVal flags As Long, ByRef iid As ShellTagGuid, ByRef store As IPlayerTagStore) As Long
+    Private Declare Function ShellParseGuid Lib "ole32.dll" Alias "CLSIDFromString" (ByVal text As LongPtr, ByRef value As ShellTagGuid) As Long
+    Private Declare Function ShellValueToString Lib "propsys.dll" Alias "PropVariantToStringAlloc" (ByRef value As ShellTagValue, ByRef text As LongPtr) As Long
+    Private Declare Function ShellElementCount Lib "propsys.dll" Alias "PropVariantGetElementCount" (ByRef value As ShellTagValue) As Long
+    Private Declare Function ShellStringElement Lib "propsys.dll" Alias "PropVariantGetStringElem" (ByRef value As ShellTagValue, ByVal index As Long, ByRef text As LongPtr) As Long
+    Private Declare Function ShellClearValue Lib "ole32.dll" Alias "PropVariantClear" (ByRef value As ShellTagValue) As Long
+    Private Declare Sub ShellFreeMemory Lib "ole32.dll" Alias "CoTaskMemFree" (ByVal value As LongPtr)
+    Private Declare Function ShellTextLength Lib "kernel32.dll" Alias "lstrlenW" (ByVal text As LongPtr) As Long
+    Private Declare Sub ShellCopyText Lib "kernel32.dll" Alias "RtlMoveMemory" (ByVal destination As LongPtr, ByVal source As LongPtr, ByVal length As LongPtr)
+
+    Private Function ShellString(ByVal pointer As LongPtr) As String
+        Dim length As Long
+        Dim text As String
+        If pointer = 0 Then Exit Function
+        length = ShellTextLength(pointer)
+        If length > 0 Then
+            text = String$(length, vbNullChar)
+            ShellCopyText StrPtr(text), pointer, CLngPtr(length) * 2
+        End If
+        ' A tag must not insert extra lines into the two-line information label.
+        text = Replace(text, vbCr, " ")
+        text = Replace(text, vbLf, " ")
+        text = Replace(text, vbTab, " ")
+        ShellString = Trim$(text)
+    End Function
+
+    Private Function ReadShellText(ByVal store As IPlayerTagStore, ByVal formatId As String, ByVal propertyId As Long) As String
+        Dim key As ShellTagKey
+        Dim value As ShellTagValue
+        Dim pointer As LongPtr
+        Dim text As String
+        Dim part As String
+        Dim i As Long
+        Dim count As Long
+        On Error GoTo cleanup
+        If ShellParseGuid(StrPtr(formatId), key.format) < 0 Then GoTo cleanup
+        key.propertyId = propertyId
+        If store.GetValue(key, value) < 0 Then GoTo cleanup
+        If value.vt = &H101F Then ' VT_VECTOR | VT_LPWSTR (multiple artists)
+            count = ShellElementCount(value)
+            For i = 0 To count - 1
+                If ShellStringElement(value, i, pointer) < 0 Then GoTo cleanup
+                part = ShellString(pointer)
+                ShellFreeMemory pointer
+                pointer = 0
+                If part <> "" Then
+                    If text <> "" Then text = text & "; "
+                    text = text & part
+                End If
+            Next
+        Else
+            If ShellValueToString(value, pointer) < 0 Then GoTo cleanup
+            text = ShellString(pointer)
+        End If
+        ReadShellText = text
+    cleanup:
+        On Error Resume Next
+        If pointer <> 0 Then ShellFreeMemory pointer
+        ShellClearValue value
+    End Function
+
+    Public Function ShellTrackDisplay(ByVal filename As String) As String
+        Dim store As IPlayerTagStore
+        Dim iid As ShellTagGuid
+        Dim iidText As String
+        Dim artist As String
+        Dim title As String
+        ' Set the fallback before any native call, including unsupported files.
+        ShellTrackDisplay = Mid$(filename, InStrRev(filename, "\") + 1)
+        On Error GoTo cleanup
+        iidText = "{886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99}"
+        If ShellParseGuid(StrPtr(iidText), iid) < 0 Then GoTo cleanup
+        ' GPS_HANDLERPROPERTIESONLY = 1; no GPS_READWRITE, no Commit method.
+        If ShellGetStore(StrPtr(filename), 0, 1, iid, store) < 0 Then GoTo cleanup
+        artist = ReadShellText(store, "{56A3372E-CE9C-11D2-9F0E-006097C686F6}", 2)
+        title = ReadShellText(store, "{F29F85E0-4FF9-1068-AB91-08002B27B3D9}", 2)
+        If artist <> "" And title <> "" Then ShellTrackDisplay = artist & " - " & title
+    cleanup:
+        Set store = Nothing
+    End Function
+End Module

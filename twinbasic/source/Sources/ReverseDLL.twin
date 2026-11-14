@@ -1,0 +1,58 @@
+' Native x64 DLL; loaded only from beside the executable. No registration.
+Module ReverseDLL
+    Private Declare PtrSafe Function ReverseLoad Lib "kernel32.dll" Alias "LoadLibraryExW" (ByVal path As LongPtr, ByVal file As LongPtr, ByVal flags As Long) As LongPtr
+    Private Declare PtrSafe Function ReverseFree Lib "kernel32.dll" Alias "FreeLibrary" (ByVal module As LongPtr) As Long
+    Private Declare PtrSafe Function ReverseProc Lib "kernel32.dll" Alias "GetProcAddress" (ByVal module As LongPtr, ByVal name As String) As LongPtr
+    Private Declare PtrSafe Function Reverse_Version Lib "reverse.dll" () As Long
+    Public Declare PtrSafe Function Reverse_OpenW Lib "reverse.dll" (ByVal file As LongPtr, ByVal mode As Long, ByVal chunk As Double, ByRef session As LongPtr) As Long
+    Public Declare PtrSafe Sub Reverse_Close Lib "reverse.dll" (ByVal session As LongPtr)
+    Public Declare PtrSafe Function Reverse_Play Lib "reverse.dll" (ByVal session As LongPtr) As Long
+    Public Declare PtrSafe Function Reverse_Pause Lib "reverse.dll" (ByVal session As LongPtr) As Long
+    Public Declare PtrSafe Function Reverse_Stop Lib "reverse.dll" (ByVal session As LongPtr) As Long
+    Public Declare PtrSafe Function Reverse_Seek Lib "reverse.dll" (ByVal session As LongPtr, ByVal seconds As Double) As Long
+    Public Declare PtrSafe Function Reverse_Volume Lib "reverse.dll" (ByVal session As LongPtr, ByVal percent As Long) As Long
+    Public Declare PtrSafe Function Reverse_Duration Lib "reverse.dll" (ByVal session As LongPtr) As Double
+    Public Declare PtrSafe Function Reverse_Position Lib "reverse.dll" (ByVal session As LongPtr) As Double
+    Public Declare PtrSafe Function Reverse_State Lib "reverse.dll" (ByVal session As LongPtr) As Long
+    Private Declare PtrSafe Sub Reverse_ErrorW Lib "reverse.dll" (ByVal session As LongPtr, ByVal text As LongPtr, ByVal capacity As Long)
+    Private reverseModule As LongPtr
+    Private tried As Boolean
+
+    Public Function HasReverseDLL() As Boolean
+        Dim path As String
+        Dim names As Variant
+        Dim name As Variant
+        If tried Then
+            HasReverseDLL = (reverseModule <> 0)
+            Exit Function
+        End If
+        tried = True
+        On Error GoTo unavailable
+        path = JoinPlayerPath(App.Path, "reverse.dll")
+        reverseModule = ReverseLoad(StrPtr(path), 0, &H900) ' DLL directory + System32
+        If reverseModule = 0 Then Exit Function
+        names = Array("Reverse_Version", "Reverse_OpenW", "Reverse_Close", "Reverse_Play", "Reverse_Pause", "Reverse_Stop", "Reverse_Seek", "Reverse_Volume", "Reverse_Duration", "Reverse_Position", "Reverse_State", "Reverse_ErrorW")
+        For Each name In names
+            If ReverseProc(reverseModule, CStr(name)) = 0 Then GoTo unavailable
+        Next
+        If Reverse_Version() <> &H10000 Then GoTo unavailable
+        HasReverseDLL = True
+        Exit Function
+    unavailable:
+        If reverseModule <> 0 Then ReverseFree reverseModule
+        reverseModule = 0
+        Err.Clear
+    End Function
+
+    Public Sub CheckReverse(ByVal result As Long, ByVal session As LongPtr)
+        Dim text As String
+        Dim zero As Long
+        If result >= 0 Then Exit Sub
+        text = String$(512, vbNullChar)
+        Reverse_ErrorW session, StrPtr(text), 512
+        zero = InStr(text, vbNullChar)
+        If zero > 0 Then text = Left$(text, zero - 1)
+        If text = "" Then text = "Ошибка reverse.dll: 0x" & Hex$(result)
+        Err.Raise result, "reverse.dll", text
+    End Sub
+End Module

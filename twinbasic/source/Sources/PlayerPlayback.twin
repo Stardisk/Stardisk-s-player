@@ -1,0 +1,359 @@
+' Common controls for DirectShow and Media Foundation; the form owns one instance.
+Class PlayerPlayback
+    Private graph As IMediaControl
+    Private position As IMediaPosition
+    Private audio As IBasicAudio
+    Private graphEvents As IMediaEvent
+    Private mf As IPlayerMF
+    Private mfEvents As PlayerMFEvents
+    Private timeFormat As PlayerMFGuid ' GUID_NULL = MFP_POSITIONTYPE_100NS
+    Private component As String
+    Private speedAvailable As Boolean
+    Private busyWaiting As Boolean
+    Private reverseSession As LongPtr
+    Private reverseEnded As Boolean
+    Private Declare Function PlaybackTicks Lib "kernel32.dll" Alias "GetTickCount64" () As LongLong
+    ' MP3 audio renderer clocks can include speed already. Do not multiply
+    ' that clock again through IMediaPosition.CurrentPosition.
+    Private graphPosition As Double
+    Private graphRate As Double
+    Private graphStarted As LongLong
+    Private graphRunning As Boolean
+
+    Public Property Get HasMedia() As Boolean
+        HasMedia = (Not graph Is Nothing) Or (Not mf Is Nothing) Or (reverseSession <> 0)
+    End Property
+
+    Public Property Get IsReverse() As Boolean
+        IsReverse = (reverseSession <> 0)
+    End Property
+
+    Public Property Get Busy() As Boolean
+        Busy = busyWaiting
+    End Property
+
+    Public Property Get ComponentName() As String
+        ComponentName = component
+    End Property
+
+    Public Property Get SupportsSpeed() As Boolean
+        SupportsSpeed = speedAvailable
+    End Property
+
+    Public Sub OpenFile(ByVal filename As String, ByRef attempts As String, Optional ByVal reverse As Boolean = False)
+        Dim errorNumber As Long
+        Dim errorDescription As String
+        Dim item As stdole.IUnknown
+        Dim status As Long
+        Dim networkStream As Boolean
+        networkStream = IsPlayerStreamURL(filename)
+        Me.Close
+        If reverse Then
+            If networkStream Or Not HasReverseDLL() Then Err.Raise 5, "PlayerPlayback", "Реверс недоступен."
+            CheckReverse Reverse_OpenW(StrPtr(filename), 2, 0.25, reverseSession), reverseSession
+            component = "Media Foundation (реверс)"
+            speedAvailable = False
+            main.PreparePlaybackBackend component, False
+            Exit Sub
+        End If
+        If Not networkStream Then
+            If TryDirectShow(filename, attempts) Then Exit Sub
+        Else
+            attempts = ""
+        End If
+        On Error GoTo failed
+        main.PreparePlaybackBackend "Media Foundation", False
+        Set mfEvents = New PlayerMFEvents
+        If networkStream Then
+            BeginEvent 6
+            status = MFPCreateMediaPlayer(StrPtr(filename), 0, 0, mfEvents, 0, mf)
+        Else
+            status = MFPCreateMediaPlayer(0, 0, 0, mfEvents, 0, mf)
+        End If
+        If status < 0 Then Err.Raise status, "Media Foundation", "Не удалось создать системный проигрыватель Media Foundation."
+        If Not networkStream Then
+            mf.CreateMediaItemFromURL StrPtr(filename), 1, 0, item
+            BeginEvent 6
+            mf.SetMediaItem item
+        End If
+        WaitEvent 6
+        Set item = Nothing
+        component = "Media Foundation"
+        ' MFPlay preserves pitch: this player only offers vinyl-style speed.
+        speedAvailable = False
+        main.PreparePlaybackBackend component, False
+        Exit Sub
+    failed:
+        errorNumber = Err.Number
+        errorDescription = Err.Description
+        If attempts <> "" Then attempts = attempts & vbCrLf
+        attempts = attempts & "Media Foundation: 0x" & Right$("00000000" & Hex$(errorNumber), 8) & " — " & errorDescription
+        Me.Close
+        Err.Raise errorNumber, "PlayerPlayback.OpenFile", errorDescription
+    End Sub
+
+    Private Function TryDirectShow(ByVal filename As String, ByRef attempts As String) As Boolean
+        Dim errorDescription As String
+        On Error GoTo failed
+        Set graph = OpenPlaybackGraph(filename, attempts, component)
+        Set position = graph
+        Set audio = graph
+        Set graphEvents = graph
+        speedAvailable = True
+        TryDirectShow = True
+        Exit Function
+    failed:
+        errorDescription = Err.Description
+        If attempts = "" Then attempts = "DirectShow: " & errorDescription
+        Me.Close
+    End Function
+
+    Public Sub Close()
+        On Error Resume Next
+        If reverseSession <> 0 Then Reverse_Close reverseSession
+        reverseSession = 0
+        reverseEnded = False
+        If Not graph Is Nothing Then graph.Stop
+        If Not mf Is Nothing Then mf.Shutdown
+        Set graphEvents = Nothing
+        Set audio = Nothing
+        Set position = Nothing
+        Set graph = Nothing
+        Set mf = Nothing
+        Set mfEvents = Nothing
+        component = ""
+        speedAvailable = False
+        busyWaiting = False
+        graphPosition = 0
+        graphRate = 1
+        graphStarted = 0
+        graphRunning = False
+    End Sub
+
+    Private Sub Class_Terminate()
+        Me.Close
+    End Sub
+
+    Private Sub BeginEvent(ByVal eventType As Long)
+        mfEvents.CompletedEvents = mfEvents.CompletedEvents And Not CLng(2 ^ eventType)
+        If mfEvents.LastError < 0 Then Err.Raise mfEvents.LastError, "Media Foundation", "Ошибка системного проигрывателя."
+    End Sub
+
+    Private Sub WaitEvent(ByVal eventType As Long)
+        Dim started As Single
+        Dim elapsed As Single
+        Dim errorNumber As Long
+        Dim errorDescription As String
+        started = Timer
+        busyWaiting = True
+        On Error GoTo failed
+        Do While (mfEvents.CompletedEvents And CLng(2 ^ eventType)) = 0
+            If mfEvents.LastError < 0 Then Err.Raise mfEvents.LastError, "Media Foundation", "Ошибка системного проигрывателя."
+            elapsed = Timer - started
+            If elapsed < 0 Then elapsed = elapsed + 86400
+            If elapsed > 10 Then Err.Raise &H800705B4, "Media Foundation", "Системный проигрыватель не ответил за 10 секунд."
+            DoEvents
+            PlayerSleep 5
+        Loop
+        If mfEvents.LastError < 0 Then Err.Raise mfEvents.LastError, "Media Foundation", "Ошибка системного проигрывателя."
+        busyWaiting = False
+        Exit Sub
+    failed:
+        errorNumber = Err.Number
+        errorDescription = Err.Description
+        busyWaiting = False
+        Err.Raise errorNumber, "Media Foundation", errorDescription
+    End Sub
+
+    Public Sub Run()
+        Dim state As Long
+        If reverseSession <> 0 Then
+            CheckReverse Reverse_Play(reverseSession), reverseSession
+            reverseEnded = False
+            Exit Sub
+        End If
+        If Not graph Is Nothing Then
+            graph.Run
+            If Not graphRunning Then
+                graphStarted = PlaybackTicks()
+                graphRunning = True
+            End If
+        ElseIf Not mf Is Nothing Then
+            mf.GetState state
+            If state = 2 Then Exit Sub
+            mfEvents.Ended = False
+            BeginEvent 0
+            mf.Play
+            WaitEvent 0
+        End If
+    End Sub
+
+    Public Sub Pause()
+        Dim state As Long
+        Dim current As Double
+        If reverseSession <> 0 Then
+            CheckReverse Reverse_Pause(reverseSession), reverseSession
+            Exit Sub
+        End If
+        If Not graph Is Nothing Then
+            current = Me.CurrentPosition
+            graph.Pause
+            graphPosition = current
+            graphRunning = False
+        ElseIf Not mf Is Nothing Then
+            mf.GetState state
+            If state <> 2 Then Exit Sub
+            BeginEvent 1
+            mf.Pause
+            WaitEvent 1
+        End If
+    End Sub
+
+    Public Sub Stop()
+        Dim state As Long
+        Dim current As Double
+        If reverseSession <> 0 Then
+            CheckReverse Reverse_Stop(reverseSession), reverseSession
+            reverseEnded = False
+            Exit Sub
+        End If
+        If Not graph Is Nothing Then
+            current = Me.CurrentPosition
+            graph.Stop
+            graphPosition = current
+            graphRunning = False
+        ElseIf Not mf Is Nothing Then
+            mf.GetState state
+            If state = 1 Or state = 0 Then Exit Sub
+            BeginEvent 2
+            mf.Stop
+            WaitEvent 2
+            mfEvents.Ended = False
+        End If
+    End Sub
+
+    Public Property Get Duration() As Double
+        If reverseSession <> 0 Then
+            Duration = Reverse_Duration(reverseSession)
+            Exit Property
+        End If
+        Dim value As PlayerMFValue
+        If Not position Is Nothing Then
+            Duration = position.Duration
+        ElseIf Not mf Is Nothing Then
+            mf.GetDuration timeFormat, value
+            Duration = value.ticks / 10000000#
+        End If
+    End Property
+
+    Public Property Get CurrentPosition() As Double
+        If reverseSession <> 0 Then
+            CurrentPosition = Reverse_Position(reverseSession)
+            Exit Property
+        End If
+        Dim value As PlayerMFValue
+        If Not position Is Nothing Then
+            Dim seconds As Double
+            Dim length As Double
+            seconds = graphPosition
+            If graphRunning Then seconds = seconds + CDbl(PlaybackTicks() - graphStarted) * graphRate / 1000#
+            length = position.Duration
+            If length > 0 And seconds > length Then seconds = length
+            CurrentPosition = seconds
+        ElseIf Not mf Is Nothing Then
+            mf.GetPosition timeFormat, value
+            CurrentPosition = value.ticks / 10000000#
+        End If
+    End Property
+
+    Public Property Let CurrentPosition(ByVal seconds As Double)
+        If reverseSession <> 0 Then
+            CheckReverse Reverse_Seek(reverseSession, seconds), reverseSession
+            reverseEnded = False
+            Exit Property
+        End If
+        Dim value As PlayerMFValue
+        If Not position Is Nothing Then
+            position.CurrentPosition = seconds
+            graphPosition = seconds
+            graphStarted = PlaybackTicks()
+        ElseIf Not mf Is Nothing Then
+            value.vt = 20 ' VT_I8, signed 100 ns units
+            value.ticks = CLngLng(seconds * 10000000#)
+            mfEvents.Ended = False
+            BeginEvent 3
+            mf.SetPosition timeFormat, value
+            WaitEvent 3
+        End If
+    End Property
+
+    Public Property Let Volume(ByVal decibels As Long)
+        Dim amplitude As Single
+        If reverseSession <> 0 Then
+            If decibels <= -10000 Then amplitude = 0 Else amplitude = CSng(10 ^ (decibels / 2000#))
+            CheckReverse Reverse_Volume(reverseSession, CLng(amplitude * 100)), reverseSession
+            Exit Property
+        End If
+        If Not audio Is Nothing Then
+            audio.Volume = decibels
+        ElseIf Not mf Is Nothing Then
+            If decibels <= -10000 Then
+                amplitude = 0
+            Else
+                amplitude = CSng(10 ^ (decibels / 2000#))
+            End If
+            mf.SetVolume amplitude
+        End If
+    End Property
+
+    Public Property Let Rate(ByVal value As Single)
+        Dim current As Double
+        If Not speedAvailable Then Exit Property
+        If Not position Is Nothing Then
+            current = Me.CurrentPosition
+            position.Rate = value
+            graphRate = value
+            ' SetRate may seek using the graph's incorrectly scaled position.
+            Me.CurrentPosition = current
+        ElseIf Not mf Is Nothing Then
+            BeginEvent 4
+            mf.SetRate value
+            WaitEvent 4
+        End If
+    End Property
+
+    Public Function PollEnded() As Boolean
+        If reverseSession <> 0 Then
+            Dim state As Long
+            state = Reverse_State(reverseSession)
+            If state = 4 Then CheckReverse &H80004005, reverseSession
+            PollEnded = (state = 3 And Not reverseEnded)
+            If state = 3 Then reverseEnded = True
+            Exit Function
+        End If
+        Dim code As Long
+        Dim param1 As LongPtr
+        Dim param2 As LongPtr
+        If Not graphEvents Is Nothing Then
+            Do
+                On Error Resume Next
+                Err.Clear
+                graphEvents.GetEvent code, param1, param2, 0
+                If Err.Number <> 0 Then
+                    Err.Clear
+                    Exit Do
+                End If
+                If code = 1 Then
+                    PollEnded = True
+                    graphPosition = position.Duration
+                    graphRunning = False
+                End If
+                graphEvents.FreeEventParams code, param1, param2
+            Loop
+        ElseIf Not mfEvents Is Nothing Then
+            If mfEvents.LastError < 0 Then Err.Raise mfEvents.LastError, "Media Foundation", "Ошибка во время воспроизведения."
+            PollEnded = mfEvents.Ended
+            mfEvents.Ended = False
+        End If
+    End Function
+End Class

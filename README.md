@@ -1,5 +1,11 @@
 # Stardisk's Player
 
+## twinBASIC version
+
+The [twinBASIC version](twinbasic/) started as a conversion of the legacy VB6 player without Windows Media Player. I then updated it into the current version, with Unicode support, x64 preparation, revised playback, stream support and multimedia keys. It keeps the same idea: a small player for files in the current folder.
+
+The repository stores the unpacked sources and scripts for creating and exporting the working `.twinproj`. The reverse playback DLL will be added separately; normal playback is designed to work without it. See [twinbasic/README.md](twinbasic/README.md) for instructions.
+
 ## Archived VB6 versions
 
 - [legacy/vb6](legacy/vb6/) - Windows Media Player version, including the final local changes (project version 1.1.1).

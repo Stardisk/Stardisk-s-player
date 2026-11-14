@@ -1,0 +1,21 @@
+' Treat every mouse press on compact volume buttons as a normal click.
+Module UIButtons
+    Private Declare Function ButtonSubclass Lib "comctl32.dll" Alias "SetWindowSubclass" (ByVal window As LongPtr, ByVal callback As LongPtr, ByVal id As LongPtr, ByVal data As LongPtr) As Long
+    Private Declare Function ButtonUnsubclass Lib "comctl32.dll" Alias "RemoveWindowSubclass" (ByVal window As LongPtr, ByVal callback As LongPtr, ByVal id As LongPtr) As Long
+    Private Declare Function ButtonDefault Lib "comctl32.dll" Alias "DefSubclassProc" (ByVal window As LongPtr, ByVal message As Long, ByVal wParam As LongPtr, ByVal lParam As LongPtr) As LongPtr
+    Private Const BUTTON_SUBCLASS_ID As Long = &H53505642
+
+    Public Sub AttachVolumeButton(ByVal window As LongPtr)
+        ButtonSubclass window, AddressOf VolumeButtonProc, BUTTON_SUBCLASS_ID, 0
+    End Sub
+
+    Public Sub DetachVolumeButton(ByVal window As LongPtr)
+        ButtonUnsubclass window, AddressOf VolumeButtonProc, BUTTON_SUBCLASS_ID
+    End Sub
+
+    Private Function VolumeButtonProc(ByVal window As LongPtr, ByVal message As Long, ByVal wParam As LongPtr, ByVal lParam As LongPtr, ByVal subclassId As LongPtr, ByVal data As LongPtr) As LongPtr
+        If message = &H203 Then message = &H201 ' WM_LBUTTONDBLCLK -> WM_LBUTTONDOWN
+        If message = &H82 Then DetachVolumeButton window ' WM_NCDESTROY
+        VolumeButtonProc = ButtonDefault(window, message, wParam, lParam)
+    End Function
+End Module

@@ -1,0 +1,143 @@
+' System-wide transport keys. Callbacks only queue commands; the UI timer
+' executes normal player actions outside the native window-procedure stack.
+Module MediaKeys
+    Private Declare Function KeysRegister Lib "user32.dll" Alias "RegisterHotKey" (ByVal window As LongPtr, ByVal id As Long, ByVal modifiers As Long, ByVal key As Long) As Long
+    Private Declare Function KeysUnregister Lib "user32.dll" Alias "UnregisterHotKey" (ByVal window As LongPtr, ByVal id As Long) As Long
+    Private Declare Function KeysSubclass Lib "comctl32.dll" Alias "SetWindowSubclass" (ByVal window As LongPtr, ByVal callback As LongPtr, ByVal id As LongPtr, ByVal data As LongPtr) As Long
+    Private Declare Function KeysUnsubclass Lib "comctl32.dll" Alias "RemoveWindowSubclass" (ByVal window As LongPtr, ByVal callback As LongPtr, ByVal id As LongPtr) As Long
+    Private Declare Function KeysDefault Lib "comctl32.dll" Alias "DefSubclassProc" (ByVal window As LongPtr, ByVal message As Long, ByVal wParam As LongPtr, ByVal lParam As LongPtr) As LongPtr
+    Private Declare Function KeysEnabled Lib "user32.dll" Alias "IsWindowEnabled" (ByVal window As LongPtr) As Long
+    Private Declare Function KeysTicks Lib "kernel32.dll" Alias "GetTickCount64" () As LongLong
+    Private Const SUBCLASS_ID As Long = &H53504D4B
+    Private Const HOTKEY_BASE As Long = &H5110
+    Private owner As LongPtr
+    Private compactWindow As LongPtr
+    Private registered(0 To 3) As Boolean
+    Private pending(0 To 15) As Long
+    Private head As Long
+    Private tail As Long
+    Private lastCommand As Long
+    Private lastSource As Long
+    Private lastTick As LongLong
+
+    Private Function CommandForKey(ByVal index As Long) As Long
+        Select Case index
+            Case 0: CommandForKey = 14 ' play/pause
+            Case 1: CommandForKey = 13 ' stop
+            Case 2: CommandForKey = 12 ' previous
+            Case 3: CommandForKey = 11 ' next
+        End Select
+    End Function
+
+    Public Function StartPlayerMediaKeys(ByVal window As LongPtr) As String
+        Dim i As Long
+        Dim key As Long
+        Dim label As String
+        StopPlayerMediaKeys
+        If KeysSubclass(window, AddressOf PlayerKeysWindowProc, SUBCLASS_ID, 0) = 0 Then
+            StartPlayerMediaKeys = "Не удалось подключить обработчик мультимедийных кнопок."
+            Exit Function
+        End If
+        owner = window
+        For i = 0 To 3
+            Select Case i
+                Case 0: key = &HB3: label = "Play/Pause"
+                Case 1: key = &HB2: label = "Stop"
+                Case 2: key = &HB1: label = "Previous"
+                Case 3: key = &HB0: label = "Next"
+            End Select
+            registered(i) = (KeysRegister(owner, HOTKEY_BASE + i, &H4000, key) <> 0)
+            If Not registered(i) Then
+                If StartPlayerMediaKeys <> "" Then StartPlayerMediaKeys = StartPlayerMediaKeys & ", "
+                StartPlayerMediaKeys = StartPlayerMediaKeys & label
+            End If
+        Next
+        If StartPlayerMediaKeys <> "" Then StartPlayerMediaKeys = "Не удалось зарегистрировать мультимедийные кнопки: " & StartPlayerMediaKeys & ". Возможно, они заняты другим приложением."
+    End Function
+
+    Public Sub AttachCompactMediaKeys(ByVal window As LongPtr)
+        If owner = 0 Then Exit Sub
+        If compactWindow = window Then Exit Sub
+        If compactWindow <> 0 Then DetachCompactMediaKeys compactWindow
+        If KeysSubclass(window, AddressOf PlayerKeysWindowProc, SUBCLASS_ID, 0) <> 0 Then compactWindow = window
+    End Sub
+
+    Public Sub DetachCompactMediaKeys(ByVal window As LongPtr)
+        If compactWindow = window Then
+            KeysUnsubclass window, AddressOf PlayerKeysWindowProc, SUBCLASS_ID
+            compactWindow = 0
+        End If
+    End Sub
+
+    Public Function HasCompactMediaKeys() As Boolean
+        HasCompactMediaKeys = (compactWindow <> 0)
+    End Function
+
+    Public Sub StopPlayerMediaKeys()
+        Dim i As Long
+        If compactWindow <> 0 Then DetachCompactMediaKeys compactWindow
+        If owner <> 0 Then
+            For i = 0 To 3
+                If registered(i) Then KeysUnregister owner, HOTKEY_BASE + i
+                registered(i) = False
+            Next
+            KeysUnsubclass owner, AddressOf PlayerKeysWindowProc, SUBCLASS_ID
+            owner = 0
+        End If
+        head = 0
+        tail = 0
+        lastCommand = 0
+    End Sub
+
+    Private Sub QueueMediaCommand(ByVal command As Long, ByVal source As Long)
+        Dim nextTail As Long
+        Dim tick As LongLong
+        If owner = 0 Then Exit Sub
+        If KeysEnabled(owner) = 0 Then Exit Sub ' modal dialog / file operation
+        tick = KeysTicks()
+        ' Some drivers emit both transport mechanisms for a single press.
+        ' Consecutive presses arriving through the same mechanism stay distinct.
+        If command = lastCommand And source <> lastSource And tick - lastTick < 100 Then Exit Sub
+        lastCommand = command
+        lastSource = source
+        lastTick = tick
+        nextTail = (tail + 1) Mod 16
+        If nextTail = head Then Exit Sub
+        pending(tail) = command
+        tail = nextTail
+    End Sub
+
+    Public Function TakePlayerMediaCommand() As Long
+        If head = tail Then Exit Function
+        TakePlayerMediaCommand = pending(head)
+        head = (head + 1) Mod 16
+    End Function
+
+    Private Function PlayerKeysWindowProc(ByVal window As LongPtr, ByVal message As Long, ByVal wParam As LongPtr, ByVal lParam As LongPtr, ByVal subclassId As LongPtr, ByVal data As LongPtr) As LongPtr
+        Dim command As Long
+        On Error GoTo passThrough
+        Select Case message
+            Case &H312 ' WM_HOTKEY
+                If window = owner And wParam >= HOTKEY_BASE And wParam < HOTKEY_BASE + 4 Then
+                    QueueMediaCommand CommandForKey(CLng(wParam - HOTKEY_BASE)), 1
+                    Exit Function
+                End If
+            Case &H319 ' WM_APPCOMMAND: also support remotes / dedicated play/pause
+                command = CLng((lParam >> 16) And &HFFF&)
+                Select Case command
+                    Case 11, 12, 13, 14, 46, 47
+                        QueueMediaCommand command, 2
+                        PlayerKeysWindowProc = 1
+                        Exit Function
+                End Select
+            Case &H82 ' WM_NCDESTROY: final cleanup even on nonstandard shutdown
+                If window = owner Then
+                    StopPlayerMediaKeys
+                ElseIf window = compactWindow Then
+                    DetachCompactMediaKeys window
+                End If
+        End Select
+    passThrough:
+        PlayerKeysWindowProc = KeysDefault(window, message, wParam, lParam)
+    End Function
+End Module

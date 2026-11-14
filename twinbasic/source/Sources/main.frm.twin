@@ -1,0 +1,1200 @@
+[FormDesignerId("71A53736-7AB0-4C9D-B067-1642BEB7A0A8")]
+[ClassId("D7F52C84-657E-48B4-AE76-363F994DDA05")]
+[InterfaceId("99C072C9-30DC-42A3-8FA5-C9E7CB50D23E")]
+[EventInterfaceId("0BED0071-C218-4333-A65F-80A5146A036A")]
+Class main
+    Attribute VB_Name = "main"
+    Attribute VB_GlobalNameSpace = False
+    Attribute VB_Creatable = False
+    Attribute VB_PredeclaredId = True
+    Attribute VB_Exposed = False
+    Option Explicit
+    Private Declare Function AMGetErrorTextW Lib "quartz.dll" (ByVal errorCode As Long, ByVal buffer As LongPtr, ByVal maxLength As Long) As Long
+    Dim repeating, endOfTrack, showTrackInCaption As Boolean                                   'переменные для флагов воспроизведения и повтора
+    Dim starttime, endtime As Integer                                   'начальное и конечное время воспроизведения
+    Dim volume As Integer
+    Public presets As String                                            'путь к настройкам
+    Dim repeatlist As String                                            'путь к списку начал и концов повторяемых кусков
+    Dim tmplistindex As Integer                                         'переменная для запоминания номера выбранной строки при перемещении/удалении/переименовании файла
+    Dim tmpPosition As Variant                                          'переменная для запоминания на каком месте играло воспроизведение при переименовании файла
+    Dim currentPlayingFile As String
+    Private currentIsStream As Boolean
+    Private savedStreamAddresses As Collection
+    Private loadedStreamMenus As Long
+    
+    Public playingStatus As Byte ' 0 - stop; 1 - play; 2 - paused
+    Dim realCurrentPosition As Single
+    Dim rate As Single
+    Private startupPlayPending As Boolean
+    Private updatingProgress As Boolean
+    Private draggingProgress As Boolean
+    
+    Private playback As PlayerPlayback
+    Private loadingPlayback As Boolean
+    Private changingSpeedUI As Boolean
+    Private initializingUI As Boolean
+    Private changingFolder As Boolean
+    Private syncingSelection As Boolean
+    Private fileOperationBusy As Boolean
+    Private handlingMediaCommands As Boolean
+
+    Private reverseEnabled As Boolean
+    Private savedForwardSpeed As Long
+
+    Public Function DirectionTip() As String
+        If HasReverseDLL() Then DirectionTip = "Воспроизведение. ПКМ — сменить направление." Else DirectionTip = "Воспроизведение"
+    End Function
+
+    Public Function DirectionGlyph() As String
+        If reverseEnabled And Not currentIsStream Then
+            DirectionGlyph = "3"
+        Else
+            DirectionGlyph = "4"
+        End If
+    End Function
+
+    Public Sub SyncModeMenu()
+        mnuShuffle.Checked = (chkShuffle.Value = 1)
+        mnuRepeat.Checked = (chkRepeat.Value = 1)
+        mnuRepeat.Enabled = chkRepeat.Enabled
+        mnuReverse.Visible = HasReverseDLL()
+        mnuModeSeparator.Visible = mnuReverse.Visible
+        mnuReverse.Checked = reverseEnabled
+        mnuReverse.Enabled = Not currentIsStream
+        cmdPlay.Caption = DirectionGlyph()
+        cmdPlay.ToolTipText = DirectionTip()
+        If HasCompactMediaKeys() Then compact.ButtonColor
+    End Sub
+
+    Public Sub ToggleReverse()
+        Dim candidate As PlayerPlayback
+        Dim previous As PlayerPlayback
+        Dim target As Boolean
+        Dim oldPosition As Double
+        Dim oldStatus As Byte
+        Dim oldSpeed As Long
+        Dim targetSpeed As Long
+        Dim attempts As String
+        Dim description As String
+        If initializingUI Or fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        If currentIsStream Or Not HasReverseDLL() Then Exit Sub
+        oldStatus = playingStatus
+        oldSpeed = hsRate.Value
+        target = Not reverseEnabled
+        targetSpeed = savedForwardSpeed
+        If targetSpeed < 50 Then targetSpeed = 100
+        If target Then targetSpeed = 100
+        On Error GoTo failed
+        loadingPlayback = True
+        If playback.HasMedia Then
+            oldPosition = playback.CurrentPosition
+            If oldStatus = 1 Then playback.Pause
+            Set candidate = New PlayerPlayback
+            candidate.OpenFile currentPlayingFile, attempts, target
+            candidate.Volume = volume
+            If candidate.SupportsSpeed Then candidate.Rate = CSng(targetSpeed / 100) Else targetSpeed = 100
+            If target And oldStatus = 0 And oldPosition = 0 Then oldPosition = candidate.Duration
+            candidate.CurrentPosition = oldPosition
+            If oldStatus = 1 Then candidate.Run
+            Set previous = playback
+            Set playback = candidate
+            Set candidate = Nothing
+            previous.Close
+            Set previous = Nothing
+            realCurrentPosition = playback.CurrentPosition
+            SetProgressValue CLng(realCurrentPosition)
+            lblSysInfo.Caption = ShellTrackDisplay(currentPlayingFile) & vbCrLf & "[" & playback.ComponentName & "]"
+            lblSysInfo.ToolTipText = lblSysInfo.Caption
+        End If
+        If target Then savedForwardSpeed = oldSpeed
+        reverseEnabled = target
+        changingSpeedUI = True
+        hsRate.Value = targetSpeed
+        hsRate.Enabled = Not target
+        If playback.HasMedia Then hsRate.Enabled = playback.SupportsSpeed
+        lblRate.Caption = "x" & CSng(targetSpeed / 100)
+        changingSpeedUI = False
+        If target Then Timer1.Interval = 100 Else Timer1.Interval = 1000
+        endOfTrack = False
+        loadingPlayback = False
+        SyncModeMenu
+        Exit Sub
+    failed:
+        description = Err.Description
+        On Error Resume Next
+        If Not candidate Is Nothing Then candidate.Close
+        PreparePlaybackBackend playback.ComponentName, playback.SupportsSpeed
+        hsRate.Value = oldSpeed
+        If oldStatus = 1 Then playback.Run
+        changingSpeedUI = False
+        loadingPlayback = False
+        SyncModeMenu
+        MsgBox "Не удалось изменить направление. Прежнее воспроизведение сохранено." & vbCrLf & description, vbExclamation, App.Title
+    End Sub
+
+    Private Sub cmdPlay_MouseUp(Button As Integer, Shift As Integer, X As Single, Y As Single)
+        If Button = 2 Then ToggleReverse
+    End Sub
+
+    Private Sub chkShuffle_Click()
+        SyncModeMenu
+    End Sub
+
+    Private Sub chkRepeat_Click()
+        SyncModeMenu
+    End Sub
+
+    Private Sub mnuShuffle_Click()
+        If chkShuffle.Value = 1 Then chkShuffle.Value = 0 Else chkShuffle.Value = 1
+        SyncModeMenu
+    End Sub
+
+    Private Sub mnuRepeat_Click()
+        If Not chkRepeat.Enabled Then Exit Sub
+        If chkRepeat.Value = 1 Then chkRepeat.Value = 0 Else chkRepeat.Value = 1
+        SyncModeMenu
+    End Sub
+
+    Private Sub mnuReverse_Click()
+        ToggleReverse
+    End Sub
+
+    Public Sub PreparePlaybackBackend(ByVal component As String, ByVal supportsSpeed As Boolean)
+        changingSpeedUI = True
+        hsRate.Enabled = supportsSpeed
+        If Not supportsSpeed Then hsRate.Value = 100
+        rate = hsRate.Value / 100
+        lblRate.Caption = "x" & rate
+        lblSysInfo.Caption = component
+        lblSysInfo.ToolTipText = ""
+        changingSpeedUI = False
+    End Sub
+
+    Private Sub LoadMP3(filename$)
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        loadingPlayback = True
+        Dim stage As String
+        Dim errorNumber As Long
+        Dim errorDescription As String
+        Dim attempts As String
+        On Error GoTo err
+        SetBrowserLoading True
+        stage = "Освобождение предыдущего трека"
+        resetFormWhileSwitchingTracks
+        currentPlayingFile = filename
+        currentIsStream = IsPlayerStreamURL(filename)
+        SetStreamControls currentIsStream
+        stage = "Автоматический выбор способа открытия файла"
+        playback.OpenFile filename, attempts, (reverseEnabled And Not currentIsStream)
+        If currentIsStream Then
+            lblSysInfo.Caption = playback.ComponentName
+        Else
+            lblSysInfo.Caption = ShellTrackDisplay(filename) & vbCrLf & "[" & playback.ComponentName & "]"
+            lblSysInfo.ToolTipText = lblSysInfo.Caption
+        End If
+        stage = "Установка громкости"
+        playback.Volume = volume
+        stage = "Настройка скорости и позиции (changeRate)"
+        changeRate
+        stage = "Переход к началу трека"
+        If Not currentIsStream Then
+            If playback.IsReverse Then playback.CurrentPosition = playback.Duration Else playback.CurrentPosition = 0
+        End If
+        If playback.IsReverse Then Timer1.Interval = 100 Else Timer1.Interval = 1000
+        stage = "Запуск воспроизведения и обновление окна (ActionsOnPlay)"
+        ActionsOnPlay
+        loadingPlayback = False
+        SetBrowserLoading False
+        Exit Sub
+    err:
+        errorNumber = Err.Number
+        errorDescription = Err.Description
+        loadingPlayback = False
+        On Error Resume Next
+        SetBrowserLoading False
+        Timer1.Enabled = False
+        DestroyMP3
+        playingStatus = 0
+        ButtonColor
+        Dim message As String
+        message = PlaybackErrorMessage(errorNumber, errorDescription, filename, stage)
+        If attempts <> "" Then message = message & vbCrLf & vbCrLf & "Попытки открытия:" & vbCrLf & attempts
+        MsgBox message, vbExclamation, App.Title
+    End Sub
+
+    Private Function DirectShowErrorText(errorCode As Long, fallback As String) As String
+        On Error Resume Next
+        DirectShowErrorText = fallback
+        Dim buffer As String
+        Dim length As Long
+        Dim terminator As Long
+        buffer = String$(1024, vbNullChar)
+        length = AMGetErrorTextW(errorCode, StrPtr(buffer), Len(buffer))
+        If length > 0 Then
+            terminator = InStr(1, buffer, vbNullChar)
+            If terminator > 0 Then length = terminator - 1
+            If length > 0 Then DirectShowErrorText = Left$(buffer, length)
+        End If
+    End Function
+
+    Private Function PlaybackErrorMessage(errorCode As Long, fallback As String, filename As String, stage As String) As String
+        Dim explanation As String
+        Select Case errorCode
+            Case &H80040266
+                explanation = "DirectShow не смог соединить компоненты воспроизведения: они используют несовместимые способы передачи данных."
+            Case &H80040218
+                explanation = "DirectShow не смог подобрать цепочку компонентов для воспроизведения этого файла."
+            Case &H80040265, &H8004025C
+                explanation = "Выбранная цепочка воспроизведения не поддерживает формат звука в этом файле."
+            Case &H80070002, &H80070003
+                explanation = "Файл или папка не найдены. Возможно, файл был перемещён или удалён."
+            Case &H80070005
+                explanation = "Нет доступа к файлу или одному из компонентов воспроизведения."
+            Case &H8007007E
+                explanation = "Не удалось загрузить необходимый системный компонент или одну из его зависимостей."
+            Case Else
+                explanation = "При подготовке воспроизведения произошла ошибка. Подробности приведены ниже."
+        End Select
+
+        PlaybackErrorMessage = "Не удалось воспроизвести файл:" & vbCrLf & filename & vbCrLf & vbCrLf & _
+            explanation & vbCrLf & vbCrLf & "Технические сведения:" & vbCrLf & _
+            "Этап: " & stage & vbCrLf & _
+            "Код: 0x" & Right$("00000000" & Hex$(errorCode), 8) & " (" & CStr(errorCode) & ")" & vbCrLf & _
+            DirectShowErrorText(errorCode, fallback)
+    End Function
+    
+    Private Sub DestroyMP3()
+        On Error Resume Next
+        playback.Close
+        hsRate.Enabled = Not currentIsStream
+        lblSysInfo.Caption = ""
+        lblSysInfo.ToolTipText = ""
+        SetStreamControls currentIsStream
+    End Sub
+
+    Private Sub ButtonColor()                                           'задать цвет кнопок
+        Select Case playingStatus
+            Case 1: cmdPlay.BackColor = "&H00C0C0C0": cmdPause.BackColor = "&H8000000F": cmdStop.BackColor = "&H8000000F" ' подстветить воспроизведение
+            Case 2: cmdPlay.BackColor = "&H8000000F": cmdPause.BackColor = "&H00C0C0C0": cmdStop.BackColor = "&H8000000F" ' подсветить паузу
+            Case 0: cmdPlay.BackColor = "&H8000000F": cmdPause.BackColor = "&H8000000F": cmdStop.BackColor = "&H00C0C0C0"                      ' подсветить стоп
+        End Select
+    End Sub
+    
+    Private Function TimeToSeconds(mmss As String) As Integer                                         'преобразование времени мм:сс в секунды
+        TimeToSeconds = CInt(Mid(mmss, 1, 2)) * 60 + CInt(Mid(mmss, 4, 2))
+    End Function
+    
+    Private Function SecondsToTime(timeInSeconds As Variant) As String                                         'преобразование секунд в мм:сс
+        SecondsToTime = addZeros(timeInSeconds \ 60, 2) & ":" & addZeros(timeInSeconds Mod 60, 2)
+    End Function
+    
+    Private Function addZeros(number As Integer, requiredLength As Integer)
+        Dim str As String
+        str = CStr(number)
+        Do While (Len(str) < requiredLength)
+            str = "0" & str
+        Loop
+        addZeros = str
+    End Function
+    
+    Private Function SegmentEntry() As Integer
+        If playback.IsReverse Then
+            If endtime > 0 Then SegmentEntry = endtime Else SegmentEntry = CInt(playback.Duration)
+        Else
+            SegmentEntry = starttime
+        End If
+    End Function
+
+    Private Sub changeCurrentPositionManually(toValue As Integer)
+        If currentIsStream Then Exit Sub
+        If Not playback.HasMedia Or playback.Busy Then Exit Sub
+        SetProgressValue toValue
+        playback.CurrentPosition = toValue
+        realCurrentPosition = toValue
+        lblTiming.Caption = SecondsToTime(realCurrentPosition) & " / " & SecondsToTime(playback.Duration)  ' показываем текущее положение воспроизведения и общую длину
+    End Sub
+    
+    Private Sub resetFormWhileSwitchingTracks()
+        Timer1.Enabled = False
+        draggingProgress = False
+        realCurrentPosition = 0
+        lblBitrate = ""                                          'убираем название и битрейт, которые могли остаться на форме от предыдущего трека
+        cmdApply.Value = 0                                                      'выключить повтор
+        DestroyMP3
+    End Sub
+    
+    Private Sub ActionsOnPlay()                                                 'действия при воспроизведении
+    'On Error Resume Next
+        endOfTrack = False
+        playback.Run
+        If currentIsStream Then
+            playingStatus = 1
+            repeating = False
+            realCurrentPosition = 0
+            lblItems.Caption = "Поток"
+            lblSize.Caption = ""
+            lblBitrate.Caption = ""
+            lblTiming.Caption = "00:00 / поток"
+            updatingProgress = True
+            hsprogress.Value = 0
+            hsprogress.Max = 1
+            updatingProgress = False
+            If showTrackInCaption Then main.Caption = currentPlayingFile
+            Timer1.Enabled = True
+            ButtonColor
+            Exit Sub
+        End If
+        lblItems = File1.ListIndex + 1 & " / " & File1.ListCount                'показываем номер текущего элемента и общее число элементов
+        lblSize = Format(FileLen(currentPlayingFile) / 1048576, "0.00") & " МБ"   'показываем вес файла
+        playingStatus = 1
+        updatingProgress = True
+        hsprogress.Max = playback.Duration
+        updatingProgress = False
+        If playback.IsReverse Then changeCurrentPositionManually CInt(playback.Duration) Else changeCurrentPositionManually 0
+        
+        If showTrackInCaption = True Then main.Caption = PlayingCaption()
+        
+        lblBitrate = "~" & Fix(FileLen(currentPlayingFile) / playback.Duration / 1000 * 8) & " кбит/с"
+        
+        Dim loweredFilePath As String
+        loweredFilePath = StrConv(currentPlayingFile, vbLowerCase)
+        
+        If ReadINIKey(loweredFilePath, "Start", repeatlist) <> "" Then     'если путь к песне есть в списке для повторов
+            starttime = ReadINIKey(loweredFilePath, "Start", repeatlist)   'считываем начальное значение повтора
+            endtime = ReadINIKey(loweredFilePath, "End", repeatlist)       'считываем окончательное значение повтора
+            txtStartTime = SecondsToTime(starttime)
+            txtEndTime = SecondsToTime(endtime)
+            If repeating = True Then changeCurrentPositionManually SegmentEntry()                              'если флаг повтора включен, воспроизводим повторение с момента повтора
+        Else
+            starttime = 0                                        'если пути к песне нет в списке повторов, то ставим все на 0
+            endtime = 0
+            txtStartTime = "00:00"
+            txtEndTime = "00:00"
+        End If
+        Timer1.Enabled = True                                           'включаем таймер счетчика времени
+        WriteINIKey "General", "LastIndex", File1.ListIndex, presets    'записываем последний воспроизведенный трек
+        ButtonColor
+    End Sub
+    
+    Private Sub Form_Resize()                                                   'переключение в компактный режим
+        If Me.WindowState = 1 Then                                                  'если главное окно сворачивается
+            If mnuMinimizeToCompact.Checked = True Then
+                Me.Hide                                                                     'скрываем его
+                compact.Show                                                                'показываем компактный режим
+            End If
+        End If
+    End Sub
+    
+    Private Sub changeRate()
+        If changingSpeedUI Then Exit Sub
+        rate = hsRate.Value / 100
+        lblRate = "x" & rate
+        If playback Is Nothing Then Exit Sub
+        If Not playback.HasMedia Or playback.Busy Then Exit Sub
+        If Not playback.SupportsSpeed Then Exit Sub
+        playback.Rate = rate
+        realCurrentPosition = playback.CurrentPosition
+    End Sub
+    
+    Private Sub hsRate_Change()
+        changeRate
+    End Sub
+    
+    Private Sub mnuAbout_Click()                                        'меню "о программе"
+        MsgBox App.Title & " v" & App.Major & "." & App.Minor & "." & App.Revision & vbCrLf & _
+        "Автор: Александров Олег Игоревич aka Stardisk", vbInformation
+    End Sub
+    
+    Private Sub mnuCloseToCompact_Click()
+        If mnuCloseToCompact.Checked = False Then
+            mnuCloseToCompact.Checked = True
+            WriteINIKey "View", "CloseToCompact", "1", presets
+        Else
+            mnuCloseToCompact.Checked = False
+            WriteINIKey "View", "CloseToCompact", "0", presets
+        End If
+    End Sub
+    
+    Private Sub mnuCompactVolume_Click()                                'меню установки шага громкости для кнопок в компактном режиме
+        Dim tmp As Variant
+        tmp = ReadINIKey("General", "CompactStepVolume", presets)
+        tmp = InputBox("Укажите, на сколько процентов будет изменяться уровень громкости при нажатии кнопок управления громкостью в компактном режиме:", , tmp)
+        If tmp = "" Then Exit Sub
+        If IsNumeric(tmp) = False Then MsgBox "Введите число": Exit Sub
+        If tmp < 1 Or tmp > 100 Then MsgBox "Число должно быть от 1 до 100": Exit Sub
+        
+        WriteINIKey "General", "CompactStepVolume", CInt(tmp), presets
+    End Sub
+    
+    Private Sub SetStreamControls(ByVal streamMode As Boolean)
+        hsprogress.Enabled = Not streamMode
+        cmdApply.Enabled = Not streamMode
+        chkRepeat.Enabled = Not streamMode
+        txtStartTime.Enabled = Not streamMode
+        txtEndTime.Enabled = Not streamMode
+        mnuDelete.Enabled = Not streamMode
+        mnuRename.Enabled = Not streamMode
+        mnuMove.Enabled = Not streamMode
+        mnuOpenLocation.Enabled = Not streamMode
+        SyncModeMenu
+    End Sub
+
+    Private Function PlayingCaption() As String
+        If currentIsStream Then
+            PlayingCaption = currentPlayingFile
+        Else
+            PlayingCaption = File1.FileName
+        End If
+    End Function
+
+    Private Function HasSavedStream(ByVal address As String) As Boolean
+        Dim i As Long
+        For i = 1 To savedStreamAddresses.Count
+            If StrComp(CStr(savedStreamAddresses(i)), address, vbBinaryCompare) = 0 Then
+                HasSavedStream = True
+                Exit Function
+            End If
+        Next
+    End Function
+
+    Private Sub RefreshStreamMenu()
+        Dim i As Long
+        If savedStreamAddresses.Count = 0 Then
+            mnuSavedStream(0).Caption = "(Нет сохранённых потоков)"
+            mnuSavedStream(0).Enabled = False
+            mnuSavedStream(0).Visible = True
+            mnuStreamSeparator.Visible = False
+            Exit Sub
+        End If
+        For i = loadedStreamMenus To savedStreamAddresses.Count - 1
+            Load mnuSavedStream(i)
+            loadedStreamMenus = i + 1
+        Next
+        For i = 1 To savedStreamAddresses.Count
+            ' Ampersands in URL queries must not become menu mnemonics.
+            mnuSavedStream(i - 1).Caption = Replace(CStr(savedStreamAddresses(i)), "&", "&&")
+            mnuSavedStream(i - 1).Enabled = True
+            mnuSavedStream(i - 1).Visible = True
+        Next
+        mnuStreamSeparator.Visible = True
+    End Sub
+
+    Private Sub SaveStreamList()
+        Dim i As Long
+        For i = 1 To savedStreamAddresses.Count
+            WriteStreamSetting "URL" & CStr(i), CStr(savedStreamAddresses(i)), presets
+        Next
+        ' Commit the count after all addresses were written.
+        WriteStreamSetting "Count", CStr(savedStreamAddresses.Count), presets
+    End Sub
+
+    Private Sub LoadStreamList()
+        Dim countText As String
+        Dim count As Long
+        Dim i As Long
+        Dim address As String
+        Set savedStreamAddresses = New Collection
+        loadedStreamMenus = 1
+        On Error GoTo failed
+        countText = ReadStreamSetting("Count", presets)
+        If IsNumeric(countText) Then
+            If Val(countText) >= 0 And Val(countText) <= 32767 Then count = CLng(Val(countText))
+        End If
+        For i = 1 To count
+            address = Trim$(ReadStreamSetting("URL" & CStr(i), presets))
+            If IsPlayerStreamURL(address) Then
+                If Not HasSavedStream(address) Then savedStreamAddresses.Add address
+            End If
+        Next
+        If countText = "" Then
+            address = ReadINIKey("General", "LastStreamURL", presets)
+            If IsPlayerStreamURL(address) Then
+                savedStreamAddresses.Add address
+                SaveStreamList
+            End If
+        End If
+        RefreshStreamMenu
+        Exit Sub
+    failed:
+        MsgBox "Не удалось загрузить список потоков:" & vbCrLf & Err.Description, vbExclamation, App.Title
+        RefreshStreamMenu
+    End Sub
+
+    Private Sub Добавитьпоток_Click()
+        Dim address As String
+        Dim added As Boolean
+        Dim errorDescription As String
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        On Error GoTo failed
+        address = ReadStreamSetting("LastURL", presets)
+        If address = "" Then address = ReadINIKey("General", "LastStreamURL", presets)
+        address = Trim$(InputBox("Введите HTTP или HTTPS URL аудиопотока:", "Добавить поток", address))
+        If address = "" Then Exit Sub
+        If Not IsPlayerStreamURL(address) Or InStr(address, vbCr) > 0 Or InStr(address, vbLf) > 0 Or InStr(address, vbTab) > 0 Then
+            MsgBox "Укажите HTTP или HTTPS адрес потока одной строкой.", vbExclamation, App.Title
+            Exit Sub
+        End If
+        On Error GoTo failed
+        If Not HasSavedStream(address) Then
+            If savedStreamAddresses.Count >= 32767 Then Err.Raise 5, , "Список потоков заполнен."
+            savedStreamAddresses.Add address
+            added = True
+            SaveStreamList
+            added = False
+            RefreshStreamMenu
+        End If
+        WriteStreamSetting "LastURL", address, presets
+        LoadMP3 address
+        If playback.HasMedia Then WriteINIKey "General", "LastStreamURL", address, presets
+        Exit Sub
+    failed:
+        errorDescription = Err.Description
+        If added Then savedStreamAddresses.Remove savedStreamAddresses.Count
+        MsgBox "Не удалось добавить поток:" & vbCrLf & errorDescription, vbExclamation, App.Title
+    End Sub
+
+    Private Sub mnuSavedStream_Click(Index As Integer)
+        Dim address As String
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        If Index < 0 Or Index >= savedStreamAddresses.Count Then Exit Sub
+        address = CStr(savedStreamAddresses(Index + 1))
+        LoadMP3 address
+        If playback.HasMedia Then WriteINIKey "General", "LastStreamURL", address, presets
+    End Sub
+
+    Private Function SelectedLocalFile() As String
+        If File1.ListIndex >= 0 And File1.ListIndex < File1.ListCount Then
+            SelectedLocalFile = JoinPlayerPath(File1.Path, File1.List(File1.ListIndex))
+        End If
+    End Function
+
+    Private Sub SetBrowserLoading(ByVal busy As Boolean)
+        File1.Enabled = Not busy
+        Dir1.Enabled = Not busy
+        Drive1.Enabled = Not busy
+    End Sub
+
+    Private Sub ClearLocalTrack()
+        resetFormWhileSwitchingTracks
+        currentPlayingFile = ""
+        currentIsStream = False
+        playingStatus = 0
+        SetStreamControls False
+        hsRate.Enabled = Not reverseEnabled
+        lblTiming.Caption = "--:-- / --:--"
+        lblSize.Caption = ""
+        lblItems.Caption = ""
+        ButtonColor
+        If showTrackInCaption Then main.Caption = App.Title
+    End Sub
+
+    Private Sub SelectLocalTrack(ByVal index As Long)
+        Dim errorNumber As Long
+        Dim errorDescription As String
+        On Error GoTo failed
+        If File1.ListCount = 0 Then
+            If Not initializingUI Then ClearLocalTrack
+            Exit Sub
+        End If
+        If index < 0 Then index = 0
+        If index >= File1.ListCount Then index = File1.ListCount - 1
+        syncingSelection = True
+        File1.ListIndex = index
+        syncingSelection = False
+        If Not initializingUI Then File1_Click
+        Exit Sub
+    failed:
+        errorNumber = Err.Number
+        errorDescription = Err.Description
+        syncingSelection = False
+        Err.Raise errorNumber, "Выбор трека", errorDescription
+    End Sub
+
+    Private Sub SetPlayerFolder(ByVal folder As String)
+        Dim errorNumber As Long
+        Dim errorDescription As String
+        If Not PlayerFolderExists(folder) Then Err.Raise 76, , "Папка не найдена или недоступна: " & folder
+        On Error GoTo failed
+        changingFolder = True
+        If Len(folder) >= 2 Then
+            If Mid$(folder, 2, 1) = ":" Then Drive1.Drive = Left$(folder, 2)
+        End If
+        Dir1.Path = folder
+        File1.Path = Dir1.Path
+        WriteINIKey "General", "LastPath", Dir1.Path, presets
+        changingFolder = False
+        If Not initializingUI Then SelectLocalTrack 0
+        Exit Sub
+    failed:
+        errorNumber = Err.Number
+        errorDescription = Err.Description
+        changingFolder = False
+        Err.Raise errorNumber, "Выбор папки", errorDescription
+    End Sub
+
+    Private Sub ExecuteLocalFileOperation(ByVal operation As String, ByVal source As String, ByVal target As String, ByVal oldIndex As Long)
+        Dim i As Long
+        Dim nextIndex As Long
+        Dim code As Long
+        Dim errorDescription As String
+        Dim completed As Boolean
+        On Error GoTo failed
+        If Not PlayerFileExists(source) Then Err.Raise 53, , "Файл не найден: " & source
+        fileOperationBusy = True
+        Me.Enabled = False
+        ClearLocalTrack ' release all graph references before touching the file
+        Select Case operation
+            Case "Удаление"
+                If PlayerDeleteFile(StrPtr(source)) = 0 Then RaisePlayerFileError Err.LastDllError, operation
+            Case "Переименование"
+                If PlayerMoveFile(StrPtr(source), StrPtr(target), 0) = 0 Then RaisePlayerFileError Err.LastDllError, operation
+            Case "Перемещение"
+                MovePlayerFile source, target
+        End Select
+        completed = True
+        File1.Refresh
+        nextIndex = oldIndex
+        If operation = "Переименование" Then
+            For i = 0 To File1.ListCount - 1
+                If StrComp(File1.List(i), PlayerBaseName(target), vbTextCompare) = 0 Then
+                    nextIndex = i
+                    Exit For
+                End If
+            Next
+        End If
+        Me.Enabled = True
+        fileOperationBusy = False
+        SelectLocalTrack nextIndex
+        Exit Sub
+    failed:
+        code = Err.Number
+        errorDescription = Err.Description
+        On Error Resume Next
+        Me.Enabled = True
+        fileOperationBusy = False
+        syncingSelection = False
+        File1.Refresh
+        If completed Then
+            MsgBox "Файловая операция выполнена, но обновить список или воспроизведение не удалось:" & vbCrLf & errorDescription, vbExclamation, App.Title
+        Else
+            MsgBox operation & " не выполнено:" & vbCrLf & errorDescription & vbCrLf & source, vbExclamation, App.Title
+        End If
+    End Sub
+
+    Private Sub mnuGoTo_Click()
+        Dim folder As String
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        folder = Trim$(InputBox("Введите путь к папке:", "", Dir1.Path))
+        If folder = "" Then Exit Sub
+        On Error GoTo failed
+        SetPlayerFolder folder
+        Exit Sub
+    failed:
+        MsgBox Err.Description, vbExclamation, App.Title
+    End Sub
+    
+    Private Sub mnuGotoCompact_Click()                                  'меню переключения в компактный режим
+        Me.Hide
+        compact.Show
+    End Sub
+    
+    Private Sub mnuMinimizeToCompact_Click()
+        If mnuMinimizeToCompact.Checked = False Then
+            mnuMinimizeToCompact.Checked = True
+            WriteINIKey "View", "MinimizeToCompact", "1", presets
+        Else
+            mnuMinimizeToCompact.Checked = False
+            WriteINIKey "View", "MinimizeToCompact", "0", presets
+        End If
+    End Sub
+    
+    Private Sub mnuMove_Click()
+        Dim source As String
+        Dim folder As String
+        Dim target As String
+        Dim oldIndex As Long
+        If currentIsStream Or fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        source = SelectedLocalFile()
+        If source = "" Then Exit Sub
+        oldIndex = File1.ListIndex
+        folder = Trim$(InputBox("Куда перемещаем?", "", ReadINIKey("General", "LastMovePath", presets)))
+        If folder = "" Then Exit Sub
+        On Error GoTo failed
+        If Not PlayerFolderExists(folder) Then Err.Raise 76, , "Папка не найдена или недоступна: " & folder
+        target = JoinPlayerPath(folder, PlayerBaseName(source))
+        If StrComp(source, target, vbTextCompare) = 0 Then Exit Sub
+        ExecuteLocalFileOperation "Перемещение", source, target, oldIndex
+        If PlayerFileExists(target) And Not PlayerFileExists(source) Then WriteINIKey "General", "LastMovePath", folder, presets
+        Exit Sub
+    failed:
+        MsgBox "Не удалось переместить файл:" & vbCrLf & Err.Description, vbExclamation, App.Title
+    End Sub
+    
+    Private Sub mnuOpenLocation_Click()
+        If currentIsStream Or loadingPlayback Or playback.Busy Then Exit Sub
+        Shell "explorer.exe /select," & Chr$(34) & SelectedLocalFile() & Chr$(34), vbNormalFocus
+    End Sub
+    
+    Private Sub mnuRename_Click()
+        Dim source As String
+        Dim leaf As String
+        Dim target As String
+        Dim oldIndex As Long
+        If currentIsStream Or fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        source = SelectedLocalFile()
+        If source = "" Then Exit Sub
+        oldIndex = File1.ListIndex
+        leaf = InputBox("Новое имя для файла " & PlayerBaseName(source), "", PlayerBaseName(source))
+        If leaf = "" Then Exit Sub
+        If Not ValidPlayerFileName(leaf) Then
+            MsgBox "Введите имя файла без запрещённых символов и без точки или пробела в конце.", vbExclamation, App.Title
+            Exit Sub
+        End If
+        target = JoinPlayerPath(PlayerDirectoryName(source), leaf)
+        If StrComp(source, target, vbBinaryCompare) = 0 Then Exit Sub
+        ExecuteLocalFileOperation "Переименование", source, target, oldIndex
+    End Sub
+    
+    Public Sub cmdstop_Click()                                          'кнопка остановки воспроизведения
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        If Not playback.HasMedia Or playback.Busy Then Exit Sub
+        If currentIsStream Then
+            Timer1.Enabled = False
+            DestroyMP3
+            realCurrentPosition = 0
+            lblTiming.Caption = "00:00 / поток"
+            playingStatus = 0
+            ButtonColor
+            If showTrackInCaption Then main.Caption = App.Title
+            Exit Sub
+        End If
+        playback.Stop
+        If playback.IsReverse Then changeCurrentPositionManually CInt(playback.Duration) Else changeCurrentPositionManually 0
+        playingStatus = 0
+        ButtonColor                                                     'меняем кнопкам цвет
+        If showTrackInCaption = True Then main.Caption = App.Title
+    End Sub
+    
+    Private Sub cmdApply_Click()                                        'кнопка повтора
+        If currentIsStream Then Exit Sub
+    On Error GoTo err
+    If File1.ListIndex < 0 Then cmdApply.Value = 0: Exit Sub            'если файл не выбран, выходим
+    If cmdApply.Value = 1 Then                                          'если кнопка нажата
+        starttime = TimeToSeconds(txtStartTime)
+        endtime = TimeToSeconds(txtEndTime)
+        If starttime >= endtime Then
+            MsgBox "Время начала должно быть меньше времени окончания"
+            cmdApply.Value = 0
+        Else
+            repeating = True
+            changeCurrentPositionManually SegmentEntry()
+            txtStartTime.Enabled = False
+            txtEndTime.Enabled = False
+            
+            If starttime > 0 Or endtime > 0 Then
+                WriteINIKey StrConv(currentPlayingFile, vbLowerCase), "Start", CStr(starttime), repeatlist
+                WriteINIKey StrConv(currentPlayingFile, vbLowerCase), "End", CStr(endtime), repeatlist
+            End If
+        End If
+        Exit Sub
+    Else
+        repeating = False
+        txtStartTime.Enabled = True
+        txtEndTime.Enabled = True
+        Exit Sub
+    End If
+    err:
+        MsgBox "Неверные данные."
+        cmdApply.Value = 0
+    End Sub
+    
+    Public Sub cmdpause_Click()                                     'кнопка паузы
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        If Not playback.HasMedia Or playback.Busy Then Exit Sub
+        playback.Pause                                          'приостанавливаем воспроизведение
+        playingStatus = 2
+        ButtonColor                                                 'изменяем цвет кнопок
+    End Sub
+    
+    Public Sub cmdplay_Click()                                      'кнопка вопроизведения
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        If Not currentIsStream And File1.ListCount = 0 Then Exit Sub
+        If Not playback.HasMedia Then
+            If currentIsStream Then
+                LoadMP3 currentPlayingFile
+                Exit Sub
+            End If
+            If File1.ListIndex < 0 Then File1.ListIndex = 0
+            File1_Click
+            Exit Sub
+        End If
+        If repeating = True Then changeCurrentPositionManually SegmentEntry()
+        playback.Run
+        playingStatus = 1
+        ButtonColor
+        If showTrackInCaption = True Then main.Caption = PlayingCaption()
+    End Sub
+    
+    Public Sub cmdPrev_Click()
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        If File1.ListCount = 0 Then Exit Sub
+        If File1.ListIndex <= 0 Then SelectLocalTrack File1.ListCount - 1 Else SelectLocalTrack File1.ListIndex - 1
+    End Sub
+    
+    Public Sub cmdnext_Click()
+        Dim index As Long
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        If File1.ListCount = 0 Then Exit Sub
+        If chkShuffle.Value = 1 Then
+            index = Int(Rnd * File1.ListCount)
+        Else
+            index = File1.ListIndex + 1
+            If index >= File1.ListCount Then index = 0
+        End If
+        SelectLocalTrack index
+    End Sub
+    
+    Private Sub mnuClose_Click()
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        MediaKeyTimer.Enabled = False
+        StopPlayerMediaKeys
+        Timer1.Enabled = False
+        DestroyMP3
+        End
+    End Sub
+    
+    Private Sub mnuDelete_Click()
+        Dim source As String
+        Dim oldIndex As Long
+        If currentIsStream Or fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        source = SelectedLocalFile()
+        If source = "" Then Exit Sub
+        oldIndex = File1.ListIndex
+        If MsgBox("Удалить файл?" & vbCrLf & source, vbYesNo + vbQuestion, App.Title) <> vbYes Then Exit Sub
+        ExecuteLocalFileOperation "Удаление", source, "", oldIndex
+    End Sub
+    
+    Private Sub Dir1_Change()
+        If changingFolder Or fileOperationBusy Then Exit Sub
+        If presets = "" Then Exit Sub
+        On Error GoTo failed
+        If Not PlayerFolderExists(Dir1.Path) Then Exit Sub
+        changingFolder = True
+        File1.Path = Dir1.Path
+        WriteINIKey "General", "LastPath", Dir1.Path, presets
+        changingFolder = False
+        If Not initializingUI Then SelectLocalTrack 0
+        Exit Sub
+    failed:
+        changingFolder = False
+        MsgBox "Не удалось открыть папку:" & vbCrLf & Err.Description, vbExclamation, App.Title
+    End Sub
+    
+    Private Sub Drive1_Change()
+        If changingFolder Or initializingUI Or fileOperationBusy Then Exit Sub
+        If playback Is Nothing Then Exit Sub
+        On Error GoTo failed
+        SetPlayerFolder JoinPlayerPath(Left$(Drive1.Drive, 2), "")
+        Exit Sub
+    failed:
+        MsgBox "Диск недоступен. Открыта папка программы.", vbExclamation, App.Title
+        On Error Resume Next
+        SetPlayerFolder App.Path
+    End Sub
+    
+    Private Sub File1_Click()
+        Dim filename As String
+        If syncingSelection Or initializingUI Or changingFolder Or fileOperationBusy Or loadingPlayback Then Exit Sub
+        If playback Is Nothing Then Exit Sub
+        filename = SelectedLocalFile()
+        If filename <> "" Then LoadMP3 filename
+    End Sub
+    
+    Private Sub loadDefaults()
+        WriteINIKey "General", "LastPath", App.Path, presets
+        WriteINIKey "General", "CompactStepVolume", "5", presets
+        
+        hsvolume.Value = 100
+        
+        MsgBox 1
+    End Sub
+    
+    Private Sub Form_Load()
+        Dim mediaKeyWarning As String
+        Dim prevPath As String
+        Dim setting As String
+        Dim value As Long
+        Dim errorDescription As String
+        initializingUI = True
+        savedForwardSpeed = 100
+        Set playback = New PlayerPlayback
+        lblSysInfo.Caption = ""
+        On Error GoTo failed
+        If App.PrevInstance Then End
+        Randomize
+        presets = JoinPlayerPath(App.Path, "presets.ini")
+        repeatlist = JoinPlayerPath(App.Path, "repeatlist.ini")
+        If Not PlayerFileExists(presets) Then loadDefaults
+        EnsureINIFile presets
+        If PlayerFileExists(repeatlist) Then EnsureINIFile repeatlist
+        LoadStreamList
+        prevPath = ReadINIKey("General", "LastPath", presets)
+        If Not PlayerFolderExists(prevPath) Then prevPath = App.Path
+        SetPlayerFolder prevPath
+        setting = ReadINIKey("General", "Volume", presets)
+        value = 100
+        If IsNumeric(setting) Then
+            If Val(setting) >= 0 And Val(setting) <= 100 Then value = CLng(Val(setting))
+        End If
+        hsvolume.Value = value
+        changeVolume
+        changeRate
+        setting = ReadINIKey("General", "LastIndex", presets)
+        value = 0
+        If IsNumeric(setting) Then
+            If Val(setting) >= 0 And Val(setting) < File1.ListCount Then value = CLng(Val(setting))
+        End If
+        SelectLocalTrack value
+        If ReadINIKey("View", "ShowTrackInCaption", presets) = "1" Then mnuShowTrackInCaption_Click
+        If ReadINIKey("View", "MinimizeToCompact", presets) = "1" Then mnuMinimizeToCompact_Click
+        If ReadINIKey("View", "CloseToCompact", presets) = "1" Then mnuCloseToCompact_Click
+        SyncModeMenu
+        initializingUI = False
+        mediaKeyWarning = StartPlayerMediaKeys(Me.hWnd)
+        MediaKeyTimer.Enabled = True
+        If mediaKeyWarning <> "" Then MsgBox mediaKeyWarning, vbExclamation, App.Title
+        startupPlayPending = (File1.ListCount > 0)
+        Exit Sub
+    failed:
+        errorDescription = Err.Description
+        initializingUI = False
+        changingFolder = False
+        syncingSelection = False
+        MsgBox "Не удалось завершить запуск:" & vbCrLf & errorDescription, vbExclamation, App.Title
+    End Sub
+
+    Private Sub MediaKeyTimer_Timer()
+        Dim command As Long
+        Dim errorDescription As String
+        If handlingMediaCommands Then Exit Sub
+        handlingMediaCommands = True
+        On Error GoTo failed
+        command = TakePlayerMediaCommand()
+        Do While command <> 0
+            HandlePlayerMediaCommand command
+            command = TakePlayerMediaCommand()
+        Loop
+        handlingMediaCommands = False
+        Exit Sub
+    failed:
+        errorDescription = Err.Description
+        handlingMediaCommands = False
+        MsgBox "Не удалось выполнить мультимедийную команду:" & vbCrLf & errorDescription, vbExclamation, App.Title
+    End Sub
+
+    Private Sub HandlePlayerMediaCommand(ByVal command As Long)
+        If playback Is Nothing Then Exit Sub
+        If initializingUI Or fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        If Not Me.Enabled Then Exit Sub
+        Select Case command
+            Case 14
+                If playingStatus = 1 Then cmdpause_Click Else cmdplay_Click
+            Case 13: cmdstop_Click
+            Case 12: cmdPrev_Click
+            Case 11: cmdnext_Click
+            Case 46
+                If playingStatus <> 1 Then cmdplay_Click
+            Case 47
+                If playingStatus = 1 Then cmdpause_Click
+        End Select
+        If HasCompactMediaKeys() Then compact.ButtonColor
+    End Sub
+
+    Private Sub Form_Activate()
+        If startupPlayPending Then
+            startupPlayPending = False
+            File1_Click
+        End If
+    End Sub
+    
+    Private Sub Form_Unload(Cancel As Integer)                              'если главное окно программы закрывают
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then
+            Cancel = 1
+            Exit Sub
+        End If
+        If mnuCloseToCompact.Checked = True Then
+            Cancel = 1                                                          'отмена завершения программы
+            Me.Hide                                                             'прячем форму
+            compact.Show                                                        'показываем компактный режим
+        Else
+            MediaKeyTimer.Enabled = False
+            StopPlayerMediaKeys
+            Timer1.Enabled = False
+            DestroyMP3
+        End If
+    End Sub
+    
+    ' Programmatic updates must not seek the audio graph.
+    Private Sub SetProgressValue(ByVal toValue As Long)
+        If toValue < hsprogress.Min Then toValue = hsprogress.Min
+        If toValue > hsprogress.Max Then toValue = hsprogress.Max
+        updatingProgress = True
+        hsprogress.Value = toValue
+        updatingProgress = False
+    End Sub
+
+    Private Sub hsprogress_MouseDown(Button As Integer, Shift As Integer, X As Single, Y As Single)
+        If Button = 1 Then draggingProgress = True
+    End Sub
+
+    Private Sub hsprogress_Scroll()
+        If updatingProgress Then Exit Sub
+        If Not playback.HasMedia Or playback.Busy Then Exit Sub
+        If draggingProgress Then
+            lblTiming.Caption = SecondsToTime(hsprogress.Value) & " / " & SecondsToTime(playback.Duration)
+        Else
+            changeCurrentPositionManually hsprogress.Value
+        End If
+    End Sub
+
+    Private Sub hsprogress_Change()
+        If updatingProgress Then Exit Sub
+        draggingProgress = False
+        changeCurrentPositionManually hsprogress.Value
+    End Sub
+
+    Private Sub hsprogress_LostFocus()
+        If draggingProgress Then
+            draggingProgress = False
+            changeCurrentPositionManually hsprogress.Value
+        End If
+    End Sub
+
+    Private Sub changeVolume()
+        Dim preVolume As Integer
+        preVolume = -10000
+        If hsvolume.Value > 0 Then preVolume = -2000 + ((Log(hsvolume.Value) / Log(10) - 1) * 2000)                           'задаем громкость плееру
+        If Not playback Is Nothing Then
+            If playback.HasMedia And Not playback.Busy Then playback.Volume = preVolume
+        End If
+        
+        volume = preVolume
+        lblVolume = hsvolume.Value                                            'пишем текущее значение громкости
+        If presets <> "" Then WriteINIKey "General", "Volume", hsvolume.Value, presets
+    End Sub
+    
+    Private Sub hsvolume_Change()                                           'изменение громкости бегунком
+        changeVolume
+    End Sub
+    Private Sub hsvolume_Scroll()                                           'изменение громкости бегунком
+        changeVolume
+    End Sub
+    
+    Private Sub mnuRestoreCompact_Click()
+        WriteINIKey "CompactPosition", "X", 0, main.presets
+        WriteINIKey "CompactPosition", "Y", 0, main.presets
+        mnuGotoCompact_Click
+        MsgBox "Компактный режим находится в верхнем левом углу.", vbInformation
+    End Sub
+    
+    Private Sub mnuSearch_Click()
+        Dim text As String
+        Dim i As Long
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Then Exit Sub
+        text = InputBox("Название файла или его часть:", , "")
+        If text = "" Then Exit Sub
+        For i = 0 To File1.ListCount - 1
+            If InStr(1, File1.List(i), text, vbTextCompare) > 0 Then
+                SelectLocalTrack i
+                Exit Sub
+            End If
+        Next
+        MsgBox "Не найдено", vbInformation, App.Title
+    End Sub
+    
+    Private Sub mnuShowTrackInCaption_Click()
+        If mnuShowTrackInCaption.Checked = False Then
+            mnuShowTrackInCaption.Checked = True
+            WriteINIKey "View", "ShowTrackInCaption", "1", presets
+            showTrackInCaption = True
+            If playingStatus <> 0 Then main.Caption = PlayingCaption()
+        Else
+            mnuShowTrackInCaption.Checked = False
+            WriteINIKey "View", "ShowTrackInCaption", "0", presets
+            showTrackInCaption = False
+            main.Caption = App.Title
+        End If
+    End Sub
+    
+    Private Sub Timer1_Timer()                                              'таймер отображения времени воспроизведения и движения бегунка прогресса
+        Dim streamError As Long
+        Dim streamDescription As String
+        If fileOperationBusy Or loadingPlayback Or playback.Busy Or Not playback.HasMedia Then Exit Sub
+        On Error GoTo err
+        If playback.PollEnded Then endOfTrack = True
+        If currentIsStream Then
+            If endOfTrack Then
+                Timer1.Enabled = False
+                DestroyMP3
+                playingStatus = 0
+                lblSysInfo.Caption = "Поток завершён"
+                ButtonColor
+            ElseIf playingStatus = 1 Then
+                realCurrentPosition = realCurrentPosition + 1
+                lblTiming.Caption = SecondsToTime(realCurrentPosition) & " / поток"
+            End If
+            Exit Sub
+        End If
+
+        If repeating = False And playingStatus = 1 And endOfTrack = True Then 'если флаг повтора отключен, а воспроизведения включен
+            If chkRepeat.Value = 1 Then
+                If playback.IsReverse Then changeCurrentPositionManually CInt(playback.Duration) Else changeCurrentPositionManually 0
+                playback.Run
+                endOfTrack = False
+            Else
+                cmdnext_Click                      'а иначе при остановке воспроизведения из-за окончания трека нажимаем кнопку "след.трек"
+            End If
+        Else
+            If playingStatus = 1 Then realCurrentPosition = playback.CurrentPosition
+            If Not draggingProgress Then
+                lblTiming.Caption = SecondsToTime(realCurrentPosition) & " / " & SecondsToTime(playback.Duration)
+                If hsprogress.Max <> 0 Then SetProgressValue CInt(realCurrentPosition)
+            End If
+        End If
+        
+        If repeating And playingStatus = 1 And playback.IsReverse Then
+            If realCurrentPosition <= starttime Or (endtime <> 0 And realCurrentPosition > endtime) Or endOfTrack Then
+                changeCurrentPositionManually SegmentEntry()
+                playback.Run
+                endOfTrack = False
+            End If
+            Exit Sub
+        End If
+        If repeating = True And playingStatus = 1 Then                         'если флаги повтора и воспроизведения включены
+            If realCurrentPosition < starttime Then
+                changeCurrentPositionManually (starttime)
+            Else
+                If endtime <> 0 Then                                      'если время окончания не равно нулю
+                    If realCurrentPosition >= endtime Then changeCurrentPositionManually (starttime)      'если воспроизведение превысило время окончания, перескакиваем на начало воспроизведения
+                Else                                                            'если время окончания равно нулю
+                    If endOfTrack = True Then changeCurrentPositionManually (starttime): endOfTrack = False
+                End If
+            End If
+        End If
+        
+        Exit Sub
+    err:
+        streamError = Err.Number
+        streamDescription = Err.Description
+        Timer1.Enabled = False
+        DestroyMP3
+        playingStatus = 0
+        ButtonColor
+        If currentIsStream Then lblSysInfo.Caption = "Поток прерван" Else lblSysInfo.Caption = "Ошибка воспроизведения"
+        MsgBox "Воспроизведение прервано:" & vbCrLf & streamDescription & vbCrLf & _
+            "Код: 0x" & Right$("00000000" & Hex$(streamError), 8), vbExclamation, App.Title
+        lblTiming.Caption = "--.-- / --.--"                                 'пишем черточки, если не удается получить время воспроизведения
+    End Sub
+    
+
+End Class

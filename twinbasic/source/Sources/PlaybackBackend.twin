@@ -1,0 +1,31 @@
+' DirectShow first; PlayerPlayback falls back to Media Foundation on failure.
+Module PlaybackBackend
+    Public Function IsPlayerStreamURL(ByVal address As String) As Boolean
+        Dim prefix As String
+        prefix = LCase$(Trim$(address))
+        IsPlayerStreamURL = (Left$(prefix, 7) = "http://") Or (Left$(prefix, 8) = "https://")
+    End Function
+
+    Public Function OpenPlaybackGraph(filename As String, ByRef attempts As String, ByRef component As String) As IMediaControl
+        Dim control As IMediaControl
+        Dim errorNumber As Long
+        Dim errorText As String
+        On Error GoTo failed
+        attempts = ""
+        main.PreparePlaybackBackend "DirectShow", True
+        Set control = New FilgraphManager
+        control.RenderFile filename
+        component = "DirectShow"
+        Set OpenPlaybackGraph = control
+        Exit Function
+    failed:
+        errorNumber = Err.Number
+        errorText = Err.Description
+        attempts = "Обычный DirectShow: 0x" & Right$("00000000" & Hex$(errorNumber), 8) & " — " & errorText
+        On Error Resume Next
+        If Not control Is Nothing Then control.Stop
+        Set control = Nothing
+        On Error GoTo 0
+        Err.Raise errorNumber, "PlaybackBackend", errorText
+    End Function
+End Module

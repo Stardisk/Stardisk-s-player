@@ -1,0 +1,89 @@
+' Native MFPlay interfaces from the Windows SDK mfplay.h. No ActiveX or WMP.
+[InterfaceId("A714590A-58AF-430A-85BF-44F5EC838D85")]
+[OleAutomation(False)]
+[ComImport]
+Interface IPlayerMF Extends stdole.IUnknown
+    Sub Play()
+    Sub Pause()
+    Sub Stop()
+    Sub FrameStep()
+    Sub SetPosition(ByRef positionType As PlayerMFGuid, ByRef value As PlayerMFValue)
+    Sub GetPosition(ByRef positionType As PlayerMFGuid, ByRef value As PlayerMFValue)
+    Sub GetDuration(ByRef positionType As PlayerMFGuid, ByRef value As PlayerMFValue)
+    Sub SetRate(ByVal value As Single)
+    Sub GetRate(ByRef value As Single)
+    Sub GetSupportedRates(ByVal forward As Long, ByRef slowest As Single, ByRef fastest As Single)
+    Sub GetState(ByRef state As Long)
+    Sub CreateMediaItemFromURL(ByVal url As LongPtr, ByVal synchronous As Long, ByVal userData As LongPtr, ByRef item As stdole.IUnknown)
+    Sub CreateMediaItemFromObject(ByVal source As stdole.IUnknown, ByVal synchronous As Long, ByVal userData As LongPtr, ByRef item As stdole.IUnknown)
+    Sub SetMediaItem(ByVal item As stdole.IUnknown)
+    Sub ClearMediaItem()
+    Sub GetMediaItem(ByRef item As stdole.IUnknown)
+    Sub GetVolume(ByRef value As Single)
+    Sub SetVolume(ByVal value As Single)
+    Sub GetBalance(ByRef value As Single)
+    Sub SetBalance(ByVal value As Single)
+    Sub GetMute(ByRef value As Long)
+    Sub SetMute(ByVal value As Long)
+    Sub GetNativeVideoSize(ByVal size As LongPtr, ByVal ratio As LongPtr)
+    Sub GetIdealVideoSize(ByVal minimum As LongPtr, ByVal maximum As LongPtr)
+    Sub SetVideoSourceRect(ByVal rect As LongPtr)
+    Sub GetVideoSourceRect(ByVal rect As LongPtr)
+    Sub SetAspectRatioMode(ByVal mode As Long)
+    Sub GetAspectRatioMode(ByRef mode As Long)
+    Sub GetVideoWindow(ByRef window As LongPtr)
+    Sub UpdateVideo()
+    Sub SetBorderColor(ByVal color As Long)
+    Sub GetBorderColor(ByRef color As Long)
+    Sub InsertEffect(ByVal effect As stdole.IUnknown, ByVal optionalEffect As Long)
+    Sub RemoveEffect(ByVal effect As stdole.IUnknown)
+    Sub RemoveAllEffects()
+    Sub Shutdown()
+End Interface
+
+[InterfaceId("766C8FFB-5FDB-4FEA-A28D-B912996F51BD")]
+[OleAutomation(False)]
+Interface IPlayerMFCallback Extends stdole.IUnknown    
+    Sub OnMediaPlayerEvent(ByVal header As LongPtr)
+End Interface
+
+Module PlayerMFNative
+    Public Type PlayerMFGuid
+        Data1 As Long
+        Data2 As Integer
+        Data3 As Integer
+        Data4 As LongLong
+    End Type
+
+    ' PROPVARIANT: the numeric union starts at byte 8. Extra tail space is
+    ' harmless on x86 and makes the allocation large enough on x64 as well.
+    Public Type PlayerMFValue
+        vt As Integer
+        reserved1 As Integer
+        reserved2 As Integer
+        reserved3 As Integer
+        ticks As LongLong
+        padding As LongLong
+    End Type
+
+    Public Declare Function MFPCreateMediaPlayer Lib "mfplay.dll" (ByVal url As LongPtr, ByVal startPlayback As Long, ByVal options As Long, ByVal callback As IPlayerMFCallback, ByVal window As LongPtr, ByRef player As IPlayerMF) As Long
+    Public Declare Sub PlayerCopyMemory Lib "kernel32" Alias "RtlMoveMemory" (ByRef destination As Any, ByVal source As LongPtr, ByVal length As LongPtr)
+    Public Declare Sub PlayerSleep Lib "kernel32" Alias "Sleep" (ByVal milliseconds As Long)
+End Module
+
+Class PlayerMFEvents
+    Implements IPlayerMFCallback
+    Public CompletedEvents As Long
+    Public LastError As Long
+    Public Ended As Boolean
+
+    Private Sub ReceiveEvent(ByVal header As LongPtr) Implements IPlayerMFCallback.OnMediaPlayerEvent
+        Dim eventType As Long
+        Dim status As Long
+        PlayerCopyMemory eventType, header, 4
+        PlayerCopyMemory status, header + 4, 4
+        If status < 0 Then LastError = status
+        If eventType >= 0 And eventType <= 12 Then CompletedEvents = CompletedEvents Or CLng(2 ^ eventType)
+        If eventType = 11 Then Ended = True
+    End Sub
+End Class

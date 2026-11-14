@@ -1,0 +1,71 @@
+' Dedicated Unicode-safe storage for the stream list; other INI sections stay intact.
+Module StreamPresets
+    Private Declare Function StreamReadProfile Lib "kernel32" Alias "GetPrivateProfileStringW" (ByVal section As LongPtr, ByVal key As LongPtr, ByVal defaultValue As LongPtr, ByVal buffer As LongPtr, ByVal size As Long, ByVal filename As LongPtr) As Long
+    Private Declare Function StreamWriteProfile Lib "kernel32" Alias "WritePrivateProfileStringW" (ByVal section As LongPtr, ByVal key As LongPtr, ByVal value As LongPtr, ByVal filename As LongPtr) As Long
+
+    ' Existing presets.ini can be ANSI. Escape non-ASCII UTF-16 units so that
+    ' addresses survive either ANSI or Unicode INI files without conversion loss.
+    Private Function EncodeStreamSetting(ByVal value As String) As String
+        Dim i As Long
+        Dim code As Long
+        Dim ch As String
+        For i = 1 To Len(value)
+            ch = Mid$(value, i, 1)
+            code = AscW(ch) And &HFFFF&
+            If ch = "\" Then
+                EncodeStreamSetting = EncodeStreamSetting & "\\"
+            ElseIf code < 32 Or code > 126 Then
+                EncodeStreamSetting = EncodeStreamSetting & "\u" & Right$("0000" & Hex$(code), 4)
+            Else
+                EncodeStreamSetting = EncodeStreamSetting & ch
+            End If
+        Next
+    End Function
+
+    Private Function DecodeStreamSetting(ByVal value As String) As String
+        Dim i As Long
+        Dim digits As String
+        i = 1
+        Do While i <= Len(value)
+            If Mid$(value, i, 2) = "\\" Then
+                DecodeStreamSetting = DecodeStreamSetting & "\"
+                i = i + 2
+            ElseIf Mid$(value, i, 2) = "\u" And i + 5 <= Len(value) Then
+                digits = Mid$(value, i + 2, 4)
+                If digits Like "[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]" Then
+                    DecodeStreamSetting = DecodeStreamSetting & ChrW$(CLng("&H" & digits))
+                    i = i + 6
+                Else
+                    DecodeStreamSetting = DecodeStreamSetting & Mid$(value, i, 1)
+                    i = i + 1
+                End If
+            Else
+                DecodeStreamSetting = DecodeStreamSetting & Mid$(value, i, 1)
+                i = i + 1
+            End If
+        Loop
+    End Function
+
+    Public Function ReadStreamSetting(ByVal key As String, ByVal filename As String) As String
+        Dim section As String
+        Dim buffer As String
+        Dim length As Long
+        section = "Streams"
+        buffer = String$(32768, vbNullChar)
+        length = StreamReadProfile(StrPtr(section), StrPtr(key), 0, StrPtr(buffer), Len(buffer), StrPtr(filename))
+        If length >= Len(buffer) - 1 Then Err.Raise 5, "StreamPresets", "Слишком длинная запись потока в presets.ini."
+        ReadStreamSetting = DecodeStreamSetting(Left$(buffer, length))
+    End Function
+
+    Public Sub WriteStreamSetting(ByVal key As String, ByVal value As String, ByVal filename As String)
+        Dim section As String
+        Dim encoded As String
+        section = "Streams"
+        encoded = EncodeStreamSetting(value)
+        If Len(encoded) >= 32767 Then Err.Raise 5, "StreamPresets", "Слишком длинный адрес потока."
+        EnsureINIFile filename
+        If StreamWriteProfile(StrPtr(section), StrPtr(key), StrPtr(encoded), StrPtr(filename)) = 0 Then
+            Err.Raise &H80070005, "StreamPresets", "Не удалось сохранить список потоков в presets.ini."
+        End If
+    End Sub
+End Module

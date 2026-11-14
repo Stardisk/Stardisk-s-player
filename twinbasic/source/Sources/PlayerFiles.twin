@@ -1,0 +1,99 @@
+Module PlayerFiles
+    Public Declare Function PlayerAttributes Lib "kernel32.dll" Alias "GetFileAttributesW" (ByVal path As LongPtr) As Long
+    Public Declare Function PlayerCopyFile Lib "kernel32.dll" Alias "CopyFileW" (ByVal source As LongPtr, ByVal target As LongPtr, ByVal failIfExists As Long) As Long
+    Public Declare Function PlayerMoveFile Lib "kernel32.dll" Alias "MoveFileExW" (ByVal source As LongPtr, ByVal target As LongPtr, ByVal flags As Long) As Long
+    Public Declare Function PlayerDeleteFile Lib "kernel32.dll" Alias "DeleteFileW" (ByVal path As LongPtr) As Long
+    Public Declare Function PlayerCreateDirectory Lib "kernel32.dll" Alias "CreateDirectoryW" (ByVal path As LongPtr, ByVal security As LongPtr) As Long
+    Private Declare Function MoveWithProgress Lib "kernel32.dll" Alias "MoveFileWithProgressW" (ByVal source As LongPtr, ByVal target As LongPtr, ByVal callback As LongPtr, ByVal context As LongPtr, ByVal flags As Long) As Long
+    Private Declare Function PlayerTicks Lib "kernel32.dll" Alias "GetTickCount64" () As LongLong
+    Private Declare Function PlayerFormatError Lib "kernel32.dll" Alias "FormatMessageW" (ByVal flags As Long, ByVal source As LongPtr, ByVal code As Long, ByVal language As Long, ByVal buffer As LongPtr, ByVal size As Long, ByVal arguments As LongPtr) As Long
+    Private moveStarted As LongLong
+    Private moveTimedOut As Boolean
+
+    Public Function JoinPlayerPath(ByVal folder As String, ByVal leaf As String) As String
+        If Right$(folder, 1) = "\" Then
+            JoinPlayerPath = folder & leaf
+        Else
+            JoinPlayerPath = folder & "\" & leaf
+        End If
+    End Function
+
+    Public Function PlayerBaseName(ByVal path As String) As String
+        PlayerBaseName = Mid$(path, InStrRev(path, "\") + 1)
+    End Function
+
+    Public Function PlayerDirectoryName(ByVal path As String) As String
+        Dim last As Long
+        last = InStrRev(path, "\")
+        PlayerDirectoryName = Left$(path, last)
+    End Function
+
+    Public Function PlayerFolderExists(ByVal path As String) As Boolean
+        Dim attributes As Long
+        If path = "" Then Exit Function
+        attributes = PlayerAttributes(StrPtr(path))
+        If attributes <> -1 Then PlayerFolderExists = ((attributes And 16) <> 0)
+    End Function
+
+    Public Function PlayerFileExists(ByVal path As String) As Boolean
+        Dim attributes As Long
+        If path = "" Then Exit Function
+        attributes = PlayerAttributes(StrPtr(path))
+        If attributes <> -1 Then PlayerFileExists = ((attributes And 16) = 0)
+    End Function
+
+    Public Function PlayerWindowsError(ByVal code As Long) As String
+        Dim buffer As String
+        Dim length As Long
+        buffer = String$(2048, vbNullChar)
+        length = PlayerFormatError(&H1200, 0, code, 0, StrPtr(buffer), Len(buffer), 0)
+        If length > 0 Then
+            PlayerWindowsError = Trim$(Replace(Replace(Left$(buffer, length), vbCr, " "), vbLf, " "))
+        Else
+            PlayerWindowsError = "Ошибка Windows: " & CStr(code)
+        End If
+    End Function
+
+    Public Sub RaisePlayerFileError(ByVal code As Long, ByVal operation As String)
+        Err.Raise (&H80070000 Or (code And &HFFFF&)), operation, PlayerWindowsError(code)
+    End Sub
+
+    Public Function ValidPlayerFileName(ByVal leaf As String) As Boolean
+        Dim i As Long
+        Dim ch As String
+        If leaf = "" Or leaf = "." Or leaf = ".." Then Exit Function
+        If Right$(leaf, 1) = "." Or Right$(leaf, 1) = " " Then Exit Function
+        For i = 1 To Len(leaf)
+            ch = Mid$(leaf, i, 1)
+            If (AscW(ch) And &HFFFF&) < 32 Then Exit Function
+            If InStr(1, "\/:*?""<>|", ch, vbBinaryCompare) > 0 Then Exit Function
+        Next
+        ValidPlayerFileName = True
+    End Function
+
+    Private Function PlayerMoveProgress(ByVal total As LongLong, ByVal transferred As LongLong, ByVal streamSize As LongLong, ByVal streamTransferred As LongLong, ByVal streamNumber As Long, ByVal reason As Long, ByVal sourceHandle As LongPtr, ByVal targetHandle As LongPtr, ByVal context As LongPtr) As Long
+        On Error GoTo cancel
+        DoEvents
+        If PlayerTicks() - moveStarted > 30000 Then
+            moveTimedOut = True
+            GoTo cancel
+        End If
+        Exit Function ' PROGRESS_CONTINUE
+    cancel:
+        PlayerMoveProgress = 1 ' PROGRESS_CANCEL: preserve source, discard partial copy
+    End Function
+
+    Public Sub MovePlayerFile(ByVal source As String, ByVal target As String)
+        Dim code As Long
+        moveStarted = PlayerTicks()
+        moveTimedOut = False
+        ' No REPLACE_EXISTING: an existing destination must never be overwritten.
+        If MoveWithProgress(StrPtr(source), StrPtr(target), AddressOf PlayerMoveProgress, 0, 2) = 0 Then
+            code = Err.LastDllError
+            If moveTimedOut Then Err.Raise &H800705B4, "Перемещение", "Перемещение отменено: превышено время передачи 30 секунд."
+            RaisePlayerFileError code, "Перемещение"
+        End If
+        If PlayerFileExists(source) Then Err.Raise 5, "Перемещение", "Windows оставила исходный файл на месте. Проверьте исходную и целевую папки."
+        If Not PlayerFileExists(target) Then Err.Raise 53, "Перемещение", "После перемещения целевой файл не найден."
+    End Sub
+End Module
