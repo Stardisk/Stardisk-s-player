@@ -1,0 +1,2 @@
+# Preserve the original bytes of archived VB6 sources and resources.
+legacy/** -text

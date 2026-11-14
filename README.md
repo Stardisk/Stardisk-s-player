@@ -1,4 +1,12 @@
 # Stardisk's Player
+
+## Archived VB6 versions
+
+- [legacy/vb6](legacy/vb6/) - Windows Media Player version, including the final local changes (project version 1.1.1).
+- [legacy/vb6_nowmp](legacy/vb6_nowmp/) - VB6 version using DirectShow instead of Windows Media Player (project version 1.1.2).
+
+The folders preserve the archived files, including original encodings and resources. Local build output paths in the VBP files may need adjusting before compilation. The description below documents the original WMP version.
+
 Very simple audio player on VB6.
 
 I think that all modern audioplayers are too big and have a lot of excessive functions. <br>
