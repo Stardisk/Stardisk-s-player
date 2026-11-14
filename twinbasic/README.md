@@ -8,7 +8,7 @@ The legacy VB6 versions were written without vibe coding. This twinBASIC version
 
 After the conversion, playback, file and stream handling, multimedia keys and the interface were updated. Unicode support was added, and the code was prepared for x64. The idea stayed the same: a small player that plays files from the selected folder without a music library or unnecessary settings.
 
-Normal playback uses the system DirectShow and Media Foundation components. The code also supports an optional `reverse.dll`, but the library is not included in the repository yet. Without it, the reverse playback menu item is hidden; normal playback is designed to work without the DLL.
+Normal playback uses the system DirectShow and Media Foundation components. The code also supports an optional `reverse.dll`; its sources and build/activation instructions are in [reverse/](../reverse/). Without it, the reverse playback menu item is hidden; normal playback is designed to work without the DLL.
 
 ## What is stored in Git
 

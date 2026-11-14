@@ -24,7 +24,11 @@ The **C++ version is the main version**, maintained on `main`, and the source fo
 - Uses system DirectShow and Media Foundation. Available formats depend on Windows codecs.
 - Normal playback needs one EXE, with no Visual C++ Redistributable or .NET installation. Settings are saved beside it.
 
-The optional reverse playback DLL will be handled separately. It is not included at this stage; normal playback works without it and the reverse menu item stays hidden.
+## Optional reverse playback library
+
+[reverse/](reverse/) contains the sources of **reverse.dll**, an optional x64 library that enables reverse playback in both the C++ and twinBASIC players. Build it with `.\reverse\build.ps1`, place the DLL beside the player EXE and restart the player. Use the Mode menu or right-click Play to switch direction. Without the DLL, normal playback still works and the reverse menu item stays hidden.
+
+See the [library instructions](reverse/README.md) for build and activation steps, API and limitations. Compiled DLLs are excluded from Git; the repository contains their sources.
 
 ## Build from source
 

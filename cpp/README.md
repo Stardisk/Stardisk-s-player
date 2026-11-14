@@ -10,13 +10,13 @@ The player keeps the original idea: play files from the selected folder without 
 
 Windows 10/11 x64. Normal playback needs only the built EXE; no Visual C++ Redistributable, .NET or Node.js is required to run it. Playback uses system DirectShow and Media Foundation, so available formats depend on Windows codecs. The interface is in Russian.
 
-The player writes `presets.ini` and `repeatlist.ini` beside the EXE, so that folder must be writable. Reverse playback is optional. Its DLL is not included at this stage; without it, the reverse menu item is hidden.
+The player writes `presets.ini` and `repeatlist.ini` beside the EXE, so that folder must be writable. Reverse playback is optional. Build the optional DLL from [reverse/](../reverse/) and place it beside the player EXE to enable it. Without the DLL, the reverse menu item is hidden.
 
 ## Source layout
 
 - `src/` — C++ sources, the Windows resource script and the application icon.
 - `src/ui.generated.h` — checked-in control and menu definitions originally generated from the twinBASIC forms. No generation step is needed to build.
-- `src/reverse_api.h` — the interface and loader for the optional DLL; the DLL implementation is not included.
+- `../reverse/api.h` — the shared interface and loader for the optional DLL. Its implementation and build instructions are in [reverse/](../reverse/).
 - `tests/` and `test.ps1` — playback and application tests, plus scripts that create their silent audio fixtures and local HTTP server.
 - `build.ps1` — builds the x64 EXE and checks its runtime imports.
 - `tools/toolchain.json` — records the LLVM-MinGW distribution used during development. The compiler itself is not stored in Git.

@@ -1,0 +1,7 @@
+/build/
+/qa/
+*.dll
+*.exe
+*.o
+*.obj
+*.log

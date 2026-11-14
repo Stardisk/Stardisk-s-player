@@ -12,3 +12,7 @@ cpp/** text=auto
 cpp/**/*.ico -text
 cpp/*.ps1 text eol=crlf
 cpp/tests/*.mjs text eol=lf
+
+# Reverse library sources and PowerShell scripts.
+reverse/** text=auto
+reverse/*.ps1 text eol=crlf

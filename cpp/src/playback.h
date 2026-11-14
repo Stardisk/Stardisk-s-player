@@ -2,7 +2,7 @@
 #include "base.h"
 #include <dshow.h>
 #include <mfplay.h>
-#include "reverse_api.h"
+#include "../../reverse/api.h"
 extern "C" HRESULT WINAPI PropVariantToStringAlloc(REFPROPVARIANT value, PWSTR* text);
 
 template <class T> inline void release(T*& p)
