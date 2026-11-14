@@ -1,46 +1,49 @@
 # Stardisk's Player
 
-## twinBASIC version
+**English** | [Русский](README.ru.md)
 
-The [twinBASIC version](twinbasic/) started as a conversion of the legacy VB6 player without Windows Media Player. I then updated it into the current version, with Unicode support, x64 preparation, revised playback, stream support and multimedia keys. It keeps the same idea: a small player for files in the current folder.
+A small audio player for files in the selected folder. I don't need a music library or a pile of settings — I just want to play music from the current folder.
 
-The repository stores the unpacked sources and scripts for creating and exporting the working `.twinproj`. The reverse playback DLL will be added separately; normal playback is designed to work without it. See [twinbasic/README.md](twinbasic/README.md) for instructions.
+The **C++ version is the main version**, maintained on `main`, and the source for future player releases. The repository also preserves the earlier twinBASIC and VB6 versions.
 
-## Archived VB6 versions
+## Versions and development history
 
-- [legacy/vb6](legacy/vb6/) - Windows Media Player version, including the final local changes (project version 1.1.1).
-- [legacy/vb6_nowmp](legacy/vb6_nowmp/) - VB6 version using DirectShow instead of Windows Media Player (project version 1.1.2).
+| Version | Sources | How it was made |
+| --- | --- | --- |
+| C++ — current | [cpp/](cpp/) | The twinBASIC version rewritten in modern C++20 with the help of AI. |
+| twinBASIC | [twinbasic/](twinbasic/) | Converted from the legacy VB6 version without Windows Media Player, then updated; developed partly with vibe coding. |
+| Legacy VB6 / WMP | [legacy/vb6/](legacy/vb6/) | Written without vibe coding. Preserved with the final local changes, project version 1.1.1. |
+| Legacy VB6 / no WMP | [legacy/vb6_nowmp/](legacy/vb6_nowmp/) | Written without vibe coding. Uses DirectShow, project version 1.1.2. |
 
-The folders preserve the archived files, including original encodings and resources. Local build output paths in the VBP files may need adjusting before compilation. The description below documents the original WMP version.
+## Current C++ player
 
-Very simple audio player on VB6.
+- Windows 10/11 x64, Russian interface and Unicode file paths.
+- Plays files from the selected folder, with a compact window and multimedia keys.
+- File rename, move and delete; HTTP/HTTPS streams.
+- Shuffle, track repeat, A–B repeat, volume and playback speed controls.
+- Uses system DirectShow and Media Foundation. Available formats depend on Windows codecs.
+- Normal playback needs one EXE, with no Visual C++ Redistributable or .NET installation. Settings are saved beside it.
 
-I think that all modern audioplayers are too big and have a lot of excessive functions. <br>
-I don't need functions like playlists, music library, equalizer, bunch of playing animations, sorting by artist/album/genre/goddamn devil/etc.<br>
-I just want to play music files in the current folder.<br><br>
+The optional reverse playback DLL will be handled separately. It is not included at this stage; normal playback works without it and the reverse menu item stays hidden.
 
-So, I made my own audio player.<br><br>
+## Build from source
 
-![stardisk player v1 1](https://user-images.githubusercontent.com/24385735/202901770-50b563ec-12d9-4492-9d22-822f9bdcc558.png)<br><br>
+Install LLVM-MinGW. From PowerShell in the repository root:
 
-It was written in 2013 or something, but in 2022 I've found it's sources, fix some bugs and post in there.<br><br>
+```powershell
+.\cpp\build.ps1
+```
 
-## Features ##
-- No installation required: the player is one .exe file (and 2 .ini files which will be created while running)
-- Extremely lightweight: ~200 Kilobytes!
-- Extremely fast launch.
-- Works in any Windows version.
-- Integrated file explorer. Just select a folder and player will play all the mp3 files inside.
-- Fast file management - you can move, rename or delete mp3-file which is currently playing. Quite useful when you try to deal with folder with a lot of different mp3-files, "Downloads" for example.
-- You can access local network resources by clicking "..." button near the drive selector and type in the window something like "\\\\192.168.88.247\music".
-- Has compact mode which is always on top, movable and takes very little space on the screen.
-- Strange function - "Play a part". You can choose start time and end time of any file and loop this part. If you don't need, you can hide it.
-<br><br>
-## Problems ##
-- Non-standard characters in filenames like letters with umlauts or non-latin alphabets are not supported and these files couldn't be played.<br>
-- 32bit.<br>
-- Requires **MSVBVM60.DLL** installed in your system. But usually this file is located in C:\Windows\system32.<br>
-- Requires Windows Media Player installed, because it uses its API. If you don't have it, you can put **wmp.dll** in the folder with .exe file. <br>
-- Russian interface only.<br><br>
+The default compiler location is `C:\Program Files\LLVM-MinGW`. Use `-Toolchain` to select another installation. The result is `cpp/stardisk.exe`.
 
-I hope that you find this audio player useful.
+See [C++ instructions](cpp/README.md) for requirements, build options and tests. Node.js and twinBASIC are not needed to build the C++ player.
+
+## Releases
+
+Future player releases are built from `cpp/` on `main` at the chosen release commit or tag. Executables are distributed through [GitHub Releases](https://github.com/Stardisk/Stardisk-s-player/releases), not committed to the source tree. The existing VB6 release remains available as a historical version. Adding C++ sources does not publish a new release by itself.
+
+## Earlier versions
+
+The [twinBASIC documentation](twinbasic/README.md) explains how to create the working `.twinproj` from its unpacked sources and export changes back to Git.
+
+The two folders under `legacy/` preserve the original VB6 files, encodings and resources. Build output paths in their VBP files may need adjusting for another machine.

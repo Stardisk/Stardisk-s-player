@@ -6,3 +6,9 @@ twinbasic/source/**/*.twin text eol=crlf
 twinbasic/source/**/*.bas text eol=crlf
 twinbasic/source/**/*.tbform text eol=lf
 twinbasic/source/Settings text eol=lf
+
+# Source-only C++ project; keep the application icon binary.
+cpp/** text=auto
+cpp/**/*.ico -text
+cpp/*.ps1 text eol=crlf
+cpp/tests/*.mjs text eol=lf

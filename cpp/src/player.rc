@@ -1,0 +1,38 @@
+#include <windows.h>
+#pragma code_page(65001)
+1 ICON "StardiskPlayer.ico"
+2 DIALOGEX 0, 0, 360, 114
+STYLE DS_MODALFRAME | DS_SETFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Stardisk's Player"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    LTEXT "",100,8,8,282,64
+    EDITTEXT 101,8,89,282,14,ES_AUTOHSCROLL
+    DEFPUSHBUTTON "OK",IDOK,302,8,50,14
+    PUSHBUTTON "Cancel",IDCANCEL,302,26,50,14
+END
+1 VERSIONINFO
+ FILEVERSION 1,2,0,0
+ PRODUCTVERSION 1,2,0,0
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+BEGIN
+ BLOCK "StringFileInfo"
+ BEGIN
+  BLOCK "040904B0"
+  BEGIN
+   VALUE "CompanyName", "Stardisk"
+   VALUE "FileDescription", "Stardisk's Player"
+   VALUE "FileVersion", "1.2.0"
+   VALUE "InternalName", "stardisk"
+   VALUE "LegalCopyright", "(c) Stardisk 2026"
+   VALUE "OriginalFilename", "stardisk.exe"
+   VALUE "ProductName", "Stardisk's Player"
+   VALUE "ProductVersion", "1.2.0"
+  END
+ END
+ BLOCK "VarFileInfo"
+ BEGIN
+  VALUE "Translation", 0x409, 1200
+ END
+END

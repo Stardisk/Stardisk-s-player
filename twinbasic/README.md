@@ -4,6 +4,8 @@
 
 This is the old VB6 player, converted to a twinBASIC project and updated into the current version. It started from the version without Windows Media Player in [legacy/vb6_nowmp](../legacy/vb6_nowmp/).
 
+The legacy VB6 versions were written without vibe coding. This twinBASIC version was developed partly with its help. The main C++ version is a rewrite of this player in modern C++20 with the help of AI.
+
 After the conversion, playback, file and stream handling, multimedia keys and the interface were updated. Unicode support was added, and the code was prepared for x64. The idea stayed the same: a small player that plays files from the selected folder without a music library or unnecessary settings.
 
 Normal playback uses the system DirectShow and Media Foundation components. The code also supports an optional `reverse.dll`, but the library is not included in the repository yet. Without it, the reverse playback menu item is hidden; normal playback is designed to work without the DLL.

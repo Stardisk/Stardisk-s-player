@@ -1,0 +1,13 @@
+/build*/
+/qa/
+/reference/
+/tools/llvm-mingw-*/
+/tools/*.zip
+*.exe
+*.dll
+*.o
+*.obj
+*.res
+*.map
+*.ini
+*.log
