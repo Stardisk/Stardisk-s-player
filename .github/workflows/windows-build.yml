@@ -1,0 +1,79 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: C++ and reverse.dll (x64)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Check generated interface
+        run: node cpp/generate-ui.mjs --check
+
+      - name: Install pinned LLVM-MinGW
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifest = Get-Content -LiteralPath cpp/tools/toolchain.json -Raw | ConvertFrom-Json
+          $archive = Join-Path $env:RUNNER_TEMP $manifest.name
+          Invoke-WebRequest -Uri $manifest.url -OutFile $archive
+          $expected = $manifest.digest -replace '^sha256:', ''
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($actual -ine $expected) { throw 'LLVM-MinGW archive checksum mismatch' }
+          $installation = Join-Path $env:RUNNER_TEMP 'llvm-mingw'
+          Expand-Archive -LiteralPath $archive -DestinationPath $installation
+          $toolchains = @(Get-ChildItem -LiteralPath $installation -Directory | Where-Object {
+            Test-Path -LiteralPath (Join-Path $_.FullName 'bin/clang++.exe')
+          })
+          if ($toolchains.Count -ne 1) { throw 'Expected exactly one extracted LLVM-MinGW toolchain' }
+          "TOOLCHAIN=$($toolchains[0].FullName)" >> $env:GITHUB_ENV
+
+      - name: Build C++ player
+        run: ./cpp/build.ps1 -Toolchain $env:TOOLCHAIN
+
+      - name: Build reverse library
+        run: ./reverse/build.ps1 -Toolchain $env:TOOLCHAIN
+
+      - name: Package build artifacts with license
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = Join-Path $env:RUNNER_TEMP 'stardisk-player-x64'
+          New-Item -ItemType Directory -Path $package | Out-Null
+          Copy-Item -LiteralPath cpp/stardisk.exe,reverse/reverse.dll,LICENSE,THIRD_PARTY_NOTICES.md -Destination $package
+          $checksums = Get-ChildItem -LiteralPath $package -File | Sort-Object Name | ForEach-Object {
+            $digest = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$digest  $($_.Name)"
+          }
+          $checksums | Set-Content -LiteralPath (Join-Path $package 'SHA256SUMS.txt') -Encoding utf8
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stardisk-player-windows-x64-${{ github.sha }}
+          path: ${{ runner.temp }}/stardisk-player-x64/
+          if-no-files-found: error
+          retention-days: 14

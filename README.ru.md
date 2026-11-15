@@ -13,6 +13,8 @@
 - [stardisk.exe](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/stardisk.exe) — плеер.
 - [reverse.dll](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/reverse.dll) — необязательная поддержка реверса. Положите рядом с EXE и перезапустите плеер.
 
+[MIT License](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/LICENSE) также приложена к релизу.
+
 Установка не нужна. Разместите файлы в папке с доступом на запись: плеер создаёт там INI с настройками. [Исторический релиз VB6](https://github.com/Stardisk/Stardisk-s-player/releases/tag/StardiskPlayer) остаётся доступен.
 
 ## Версии и история разработки
@@ -54,6 +56,10 @@
 ## Релизы
 
 Релизы плеера собираются из `cpp/` в ветке `main` на выбранном коммите или теге. Готовые EXE размещаются в [GitHub Releases](https://github.com/Stardisk/Stardisk-s-player/releases), а не в исходниках. Существующий релиз VB6 остаётся доступен как историческая версия.
+
+## Автоматическая проверка
+
+[Windows build](https://github.com/Stardisk/Stardisk-s-player/actions/workflows/windows-build.yml) проверяет сгенерированный интерфейс и собирает C++-плеер и DLL реверса при push в `main`, в pull request и при ручном запуске. Используется закреплённый LLVM-MinGW с проверкой SHA-256. Успешный запуск сохраняет артефакт с EXE, DLL, лицензией, сторонними уведомлениями и контрольными суммами. Системные аудиотесты выполняются локально; workflow проверяет сборку и генерацию.
 
 ## Предыдущие версии
 

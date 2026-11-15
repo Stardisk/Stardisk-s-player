@@ -13,6 +13,8 @@ The **C++ version is the main version**, maintained on `main`, and the source fo
 - [stardisk.exe](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/stardisk.exe) — the player.
 - [reverse.dll](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/reverse.dll) — optional reverse playback support. Put it beside the EXE and restart the player.
 
+The [MIT license](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/LICENSE) is also attached to this release.
+
 No installer is needed. Put the files in a writable folder; the player creates its INI settings there. The [historical VB6 release](https://github.com/Stardisk/Stardisk-s-player/releases/tag/StardiskPlayer) is still available.
 
 ## Versions and development history
@@ -54,6 +56,10 @@ See [C++ instructions](cpp/README.md) for requirements, build options and tests.
 ## Releases
 
 Player releases are built from `cpp/` on `main` at the chosen release commit or tag. Executables are distributed through [GitHub Releases](https://github.com/Stardisk/Stardisk-s-player/releases), not committed to the source tree. The existing VB6 release remains available as a historical version.
+
+## Continuous integration
+
+[Windows build](https://github.com/Stardisk/Stardisk-s-player/actions/workflows/windows-build.yml) checks the generated interface and compiles the C++ player and reverse DLL on pushes to `main`, pull requests and manual runs. It uses the pinned LLVM-MinGW distribution with SHA-256 verification. Successful runs provide an artifact containing the EXE, DLL, license, third-party notices and checksums. System audio tests are run locally; this workflow checks compilation and generation.
 
 ## Earlier versions
 
