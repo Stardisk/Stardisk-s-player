@@ -60,3 +60,9 @@ Player releases are built from `cpp/` on `main` at the chosen release commit or 
 The [twinBASIC documentation](twinbasic/README.md) explains how to create the working `.twinproj` from its unpacked sources and export changes back to Git.
 
 The two folders under `legacy/` preserve the original VB6 files, encodings and resources. Build output paths in their VBP files may need adjusting for another machine.
+
+## License
+
+[MIT License](LICENSE), copyright © 2026 Stardisk. Use it, modify it and share it, including commercially; keep the copyright and license notice with copies or substantial portions of the code.
+
+Third-party copyright notices are preserved; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
