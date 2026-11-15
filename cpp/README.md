@@ -15,7 +15,8 @@ The player writes `presets.ini` and `repeatlist.ini` beside the EXE, so that fol
 ## Source layout
 
 - `src/` — C++ sources, the Windows resource script and the application icon.
-- `src/ui.generated.h` — checked-in control and menu definitions originally generated from the twinBASIC forms. No generation step is needed to build.
+- `src/ui.generated.h` — checked-in control and menu definitions generated from the versioned twinBASIC forms. No generation step is needed to build.
+- `generate-ui.mjs` — regenerates that header from `../twinbasic/source/Sources/`, without a duplicate reference export.
 - `../reverse/api.h` — the shared interface and loader for the optional DLL. Its implementation and build instructions are in [reverse/](../reverse/).
 - `tests/` and `test.ps1` — playback and application tests, plus scripts that create their silent audio fixtures and local HTTP server.
 - `build.ps1` — builds the x64 EXE and checks its runtime imports.
@@ -45,6 +46,17 @@ The result is `cpp/stardisk.exe`. Intermediate files, the linker map and the imp
 
 The build uses `-nostdlib -nostartfiles -nodefaultlibs`. It links Windows import libraries and rejects detected CRT or third-party runtime dependencies. Node.js and twinBASIC are not needed to build the player.
 
+## Regenerating the interface
+
+With Node.js installed, run from the repository root:
+
+```powershell
+node cpp/generate-ui.mjs
+node cpp/generate-ui.mjs --check
+```
+
+The first command updates `src/ui.generated.h`; the second only checks that it matches the twinBASIC forms and fails if it is out of date. Review and commit the generated header together with form changes. Ordinary C++ builds use the checked-in header.
+
 ## Tests
 
 Tests additionally require Node.js in `PATH`. Run:
@@ -53,7 +65,7 @@ Tests additionally require Node.js in `PATH`. Run:
 .\cpp\test.ps1
 ```
 
-Use `-Toolchain` if LLVM-MinGW is installed elsewhere. Tests create their own silent WAV files and settings under `cpp/qa/`, run an HTTP server on `127.0.0.1:52751`, and stop the server afterward. Test binaries go into `cpp/build/`. User music and settings are not used.
+Use `-WithoutReverse` to test normal playback even when `cpp/reverse.dll` is present. The script removes any cached DLL from `build/` when testing without it, including when the DLL beside the player is absent. Use `-Toolchain` if LLVM-MinGW is installed elsewhere. Tests create their own silent WAV files and settings under `cpp/qa/`, run an HTTP server on `127.0.0.1:52751`, and stop the server afterward. Test binaries go into `cpp/build/`. User music and settings are not used.
 
 The suite checks playback, volume, speed, seeking, pause, end of track, released file handles, HTTP playback, Unicode paths, INI storage and application behavior. Without the optional DLL, it also checks that reverse controls stay unavailable.
 

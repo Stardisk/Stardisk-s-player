@@ -6,6 +6,15 @@ A small audio player for files in the selected folder. I don't need a music libr
 
 The **C++ version is the main version**, maintained on `main`, and the source for future player releases. The repository also preserves the earlier twinBASIC and VB6 versions.
 
+## Downloads
+
+[C++ v1.2.0 for Windows x64](https://github.com/Stardisk/Stardisk-s-player/releases/tag/v1.2.0):
+
+- [stardisk.exe](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/stardisk.exe) — the player.
+- [reverse.dll](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/reverse.dll) — optional reverse playback support. Put it beside the EXE and restart the player.
+
+No installer is needed. Put the files in a writable folder; the player creates its INI settings there. The [historical VB6 release](https://github.com/Stardisk/Stardisk-s-player/releases/tag/StardiskPlayer) is still available.
+
 ## Versions and development history
 
 | Version | Sources | How it was made |
@@ -44,7 +53,7 @@ See [C++ instructions](cpp/README.md) for requirements, build options and tests.
 
 ## Releases
 
-Future player releases are built from `cpp/` on `main` at the chosen release commit or tag. Executables are distributed through [GitHub Releases](https://github.com/Stardisk/Stardisk-s-player/releases), not committed to the source tree. The existing VB6 release remains available as a historical version. Adding C++ sources does not publish a new release by itself.
+Player releases are built from `cpp/` on `main` at the chosen release commit or tag. Executables are distributed through [GitHub Releases](https://github.com/Stardisk/Stardisk-s-player/releases), not committed to the source tree. The existing VB6 release remains available as a historical version.
 
 ## Earlier versions
 

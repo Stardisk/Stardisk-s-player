@@ -1,4 +1,4 @@
-param([string]$Toolchain = 'C:\Program Files\LLVM-MinGW', [string]$RateTestFile = '', [string]$MediaTestFile = '')
+param([string]$Toolchain = 'C:\Program Files\LLVM-MinGW', [string]$RateTestFile = '', [string]$MediaTestFile = '', [switch]$WithoutReverse)
 $ErrorActionPreference='Stop'
 $server=$null
 $previousRateFile=$env:STARDISK_RATE_TEST_FILE
@@ -9,7 +9,11 @@ Push-Location $PSScriptRoot
 try {
     New-Item -ItemType Directory -Path 'build' -Force | Out-Null
     $node=(Get-Command node -ErrorAction Stop).Source
-    if(Test-Path -LiteralPath .\reverse.dll){Copy-Item -LiteralPath .\reverse.dll -Destination .\build\reverse.dll -Force}
+    if (-not $WithoutReverse -and (Test-Path -LiteralPath .\reverse.dll)) {
+        Copy-Item -LiteralPath .\reverse.dll -Destination .\build\reverse.dll -Force
+    } elseif (Test-Path -LiteralPath .\build\reverse.dll) {
+        Remove-Item -LiteralPath .\build\reverse.dll -Force
+    }
     & $node 'tests\prepare.mjs'
     if($LASTEXITCODE){throw 'Test fixture preparation failed'}
     $serverScript=Join-Path $PSScriptRoot 'tests\serve.mjs'

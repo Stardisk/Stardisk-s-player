@@ -6,6 +6,15 @@
 
 **Основная версия — C++**. Она разрабатывается в ветке `main` и служит базой будущих релизов плеера. В репозитории также сохранены предыдущие версии на twinBASIC и VB6.
 
+## Скачать
+
+[C++ v1.2.0 для Windows x64](https://github.com/Stardisk/Stardisk-s-player/releases/tag/v1.2.0):
+
+- [stardisk.exe](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/stardisk.exe) — плеер.
+- [reverse.dll](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/reverse.dll) — необязательная поддержка реверса. Положите рядом с EXE и перезапустите плеер.
+
+Установка не нужна. Разместите файлы в папке с доступом на запись: плеер создаёт там INI с настройками. [Исторический релиз VB6](https://github.com/Stardisk/Stardisk-s-player/releases/tag/StardiskPlayer) остаётся доступен.
+
 ## Версии и история разработки
 
 | Версия | Исходники | Как создавалась |
@@ -44,7 +53,7 @@
 
 ## Релизы
 
-Будущие релизы плеера собираются из `cpp/` в ветке `main` на выбранном коммите или теге. Готовые EXE размещаются в [GitHub Releases](https://github.com/Stardisk/Stardisk-s-player/releases), а не в исходниках. Существующий релиз VB6 остаётся доступен как историческая версия. Добавление исходников C++ само по себе не публикует новый релиз.
+Релизы плеера собираются из `cpp/` в ветке `main` на выбранном коммите или теге. Готовые EXE размещаются в [GitHub Releases](https://github.com/Stardisk/Stardisk-s-player/releases), а не в исходниках. Существующий релиз VB6 остаётся доступен как историческая версия.
 
 ## Предыдущие версии
 
