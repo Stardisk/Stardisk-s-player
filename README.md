@@ -2,7 +2,21 @@
 
 **English** | [Русский](README.ru.md)
 
-A small audio player for files in the selected folder. I don't need a music library or a pile of settings — I just want to play music from the current folder.
+_This project was originally created using Visual Basic 6.0 as a simple lightweight interface for Windows Media Player (wmp.dll) more than 10 years ago.
+In 2022 I removed wmp.dll dependency, and replaced it with DirectShow.
+Since then I've totally forgotten how to code in VB6 and this project has been abandoned._
+
+_Now I have an AI (ChatGPT Codex)._
+_First, it helped me port the project to twinBASIC, but later I decided to rewrite it in C++._
+_ChatGPT rewrote the entire codebase into C++ and added a reverse function, which I have no idea how to implement._
+_All three versions - VB6, twinBASIC, and C++ - are included in this repository)._
+
+_So, I admit that this project contains a lot of AI code. You have been warned._
+
+## What is it
+A small audio player for files in the selected folder.
+I don't need a music library or a pile of settings - I just want to play music from the current folder.
+Also I like listening to music backwards (reverse) - it sounds so strange and exciting.
 
 The **C++ version is the main version**, maintained on `main`, and the source for future player releases. The repository also preserves the earlier twinBASIC and VB6 versions.
 
