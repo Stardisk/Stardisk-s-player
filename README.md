@@ -22,12 +22,12 @@ The **C++ version is the main version**, maintained on `main`, and the source fo
 
 ## Downloads
 
-[C++ v1.2.0 for Windows x64](https://github.com/Stardisk/Stardisk-s-player/releases/tag/v1.2.0):
+[C++ v1.2.1 for Windows x64](https://github.com/Stardisk/Stardisk-s-player/releases/tag/v1.2.1):
 
-- [stardisk.exe](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/stardisk.exe) — the player.
-- [reverse.dll](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/reverse.dll) — optional reverse playback support. Put it beside the EXE and restart the player.
+- [stardisk.exe](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.1/stardisk.exe) — the player.
+- [reverse.dll](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.1/reverse.dll) — optional reverse playback support. Put it beside the EXE and restart the player.
 
-The [MIT license](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/LICENSE) is also attached to this release.
+The [MIT license](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.1/LICENSE) is also attached to this release.
 
 No installer is needed. Put the files in a writable folder; the player creates its INI settings there. The [historical VB6 release](https://github.com/Stardisk/Stardisk-s-player/releases/tag/StardiskPlayer) is still available.
 

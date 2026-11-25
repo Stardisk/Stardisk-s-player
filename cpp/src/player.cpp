@@ -1,5 +1,6 @@
 #include "playback.h"
 #include "ui.generated.h"
+#include <shobjidl.h>
 #include <uxtheme.h>
 
 namespace
@@ -14,6 +15,8 @@ struct App
     HWND controls[256]{};
     HFONT fonts[256]{};
     HMENU menu{}, streamsMenu{};
+    ITaskbarList3* taskbar{};
+    UINT taskbarButtonCreated{};
     HICON folderClosed{}, folderOpen{};
     HANDLE mutex{};
     Playback playback;
@@ -23,7 +26,7 @@ struct App
     bool isStream = false, repeating = false, dragging = false, ended = false;
     bool reverseEnabled = false;
     int savedForwardSpeed = 100;
-    bool showCaption = false, closeCompact = false, minimizeCompact = false;
+    bool showCaption = false, closeCompact = false, minimizeCompact = false, showTaskbarProgress = false;
     int status = 0, volume = 100, speed = 100, start = 0, end = 0, compactStep = 5;
     double realPosition = 0;
     int scrollX = 0, scrollWidth = 0;
@@ -98,10 +101,36 @@ void invalidateButtons()
     for (int id : ids)
         InvalidateRect(control(id), nullptr, TRUE);
 }
+double playbackFraction(double duration)
+{
+    if (!(duration > 0) || !(app->realPosition > 0))
+        return 0;
+    return app->realPosition >= duration ? 1 : app->realPosition / duration;
+}
+void updateTaskbarProgress()
+{
+    if (!app->taskbar || !app->showTaskbarProgress || !IsWindowVisible(app->main))
+        return;
+    if (!app->status || !app->playback.hasMedia())
+    {
+        app->taskbar->SetProgressState(app->main, TBPF_NOPROGRESS);
+        return;
+    }
+
+    double duration = app->isStream ? 0 : app->playback.duration();
+    TBPFLAG state = app->status == 2 ? TBPF_PAUSED : duration > 0 ? TBPF_NORMAL : TBPF_INDETERMINATE;
+    app->taskbar->SetProgressState(app->main, state);
+    if (duration > 0)
+    {
+        constexpr ULONGLONG scale = 10000;
+        app->taskbar->SetProgressValue(app->main, ULONGLONG(playbackFraction(duration) * scale), scale);
+    }
+}
 void changeStatus(int status)
 {
     app->status = status;
     invalidateButtons();
+    updateTaskbarProgress();
 }
 void setBrowserEnabled(bool enabled)
 {
@@ -180,6 +209,7 @@ void seek(double seconds)
     app->realPosition = seconds;
     SendMessageW(control(main_hsprogress), TBM_SETPOS, TRUE, (LPARAM)seconds);
     timing();
+    updateTaskbarProgress();
 }
 bool handlePositionKey(const MSG& msg)
 {
@@ -248,6 +278,7 @@ void clearMedia(bool clearCurrent)
 {
     KillTimer(app->main, 1);
     app->playback.close();
+    updateTaskbarProgress();
     app->dragging = false;
     app->repeating = false;
     app->checked[main_cmdApply] = false;
@@ -453,6 +484,12 @@ void pause()
     {
         message(windowsError(hr));
         return;
+    }
+    if (!app->isStream)
+    {
+        app->realPosition = app->playback.position();
+        SendMessageW(control(main_hsprogress), TBM_SETPOS, TRUE, (LPARAM)app->realPosition);
+        timing();
     }
     changeStatus(2);
 }
@@ -752,6 +789,7 @@ void returnMain()
     KillTimer(app->compact, 2);
     ShowWindow(app->compact, SW_HIDE);
     ShowWindow(app->main, SW_RESTORE);
+    updateTaskbarProgress();
     SetForegroundWindow(app->main);
 }
 bool validFileName(const Text& s)
@@ -995,6 +1033,7 @@ void toggleReverse()
     CheckMenuItem(app->menu, menu_mnuReverse, MF_BYCOMMAND | (enable ? MF_CHECKED : MF_UNCHECKED));
     streamControls();
     timing();
+    updateTaskbarProgress();
     invalidateButtons();
 }
 void command(int id)
@@ -1068,7 +1107,7 @@ void command(int id)
         shutdown();
         break;
     case menu_mnuAbout:
-        message(L"Stardisk's Player v1.2.0\r\nАвтор: Александров Олег Игоревич aka Stardisk", MB_ICONINFORMATION);
+        message(L"Stardisk's Player v1.2.1\r\nАвтор: Александров Олег Игоревич aka Stardisk", MB_ICONINFORMATION);
         break;
     case menu_mnuGoTo:
     {
@@ -1160,6 +1199,17 @@ void command(int id)
         toggleView(id, app->showCaption, L"ShowTrackInCaption");
         updateCaption();
         break;
+    case menu_mnuShowTaskbarProgress:
+        toggleView(id, app->showTaskbarProgress, L"ShowTaskbarProgress");
+        if (app->showTaskbarProgress)
+        {
+            if (app->status == 1 && !app->isStream)
+                app->realPosition = app->playback.position();
+            updateTaskbarProgress();
+        }
+        else if (app->taskbar)
+            app->taskbar->SetProgressState(app->main, TBPF_NOPROGRESS);
+        break;
     }
 }
 
@@ -1229,6 +1279,7 @@ void tick()
         SendMessageW(control(main_hsprogress), TBM_SETPOS, TRUE, (LPARAM)app->realPosition);
         timing();
     }
+    updateTaskbarProgress();
 }
 void mediaCommand(int cmd, int source)
 {
@@ -1356,6 +1407,13 @@ void drawDrive(DRAWITEMSTRUCT* item)
     if (item->itemState & ODS_FOCUS)
         DrawFocusRect(item->hDC, &r);
 }
+RECT compactTitleInterior(HWND h)
+{
+    RECT bounds{};
+    GetClientRect(h, &bounds);
+    InflateRect(&bounds, -GetSystemMetrics(SM_CXEDGE), -GetSystemMetrics(SM_CYEDGE));
+    return bounds;
+}
 void paintCompactTitle(HWND h, HDC dc)
 {
     RECT r{};
@@ -1364,20 +1422,17 @@ void paintCompactTitle(HWND h, HDC dc)
     HBRUSH bg = CreateSolidBrush(RGB(224, 224, 224));
     FillRect(dc, &r, bg);
     DeleteObject(bg);
-    double duration = app->playback.duration();
-    int width = duration > 0 ? int(80.0 * app->realPosition / duration) : 0;
     RECT progress = r;
-    progress.right = progress.left + clamp(width, 0, 80);
+    progress.right = progress.left + LONG((r.right - r.left) * playbackFraction(app->playback.duration()));
     HBRUSH shade = CreateSolidBrush(RGB(176, 176, 176));
     FillRect(dc, &progress, shade);
     DeleteObject(shade);
     SaveDC(dc);
-    IntersectClipRect(dc, r.left, r.top, r.right, r.bottom);
     SelectObject(dc, app->compactTitleFont);
     SetTextColor(dc, RGB(0, 0, 0));
     SetBkMode(dc, TRANSPARENT);
     Text name = fileName(selectedIndex());
-    TextOutW(dc, r.left + app->scrollX, r.top, name, name.size());
+    ExtTextOutW(dc, r.left + app->scrollX, r.top, ETO_CLIPPED, &r, name, name.size(), nullptr);
     RestoreDC(dc, -1);
 }
 LRESULT CALLBACK compactTitleProc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR)
@@ -1654,6 +1709,22 @@ void createMenu()
 LRESULT CALLBACK windowProc(HWND h, UINT msg, WPARAM w, LPARAM l)
 {
     bool compact = h == app->compact;
+    if (h == app->main && app->taskbarButtonCreated && msg == app->taskbarButtonCreated)
+    {
+        if (!app->taskbar)
+        {
+            ITaskbarList3* taskbar = nullptr;
+            if (SUCCEEDED(CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&taskbar))))
+            {
+                if (SUCCEEDED(taskbar->HrInit()))
+                    app->taskbar = taskbar;
+                else
+                    taskbar->Release();
+            }
+        }
+        updateTaskbarProgress();
+        return 0;
+    }
     switch (msg)
     {
     case WM_DRAWITEM:
@@ -1795,7 +1866,10 @@ LRESULT CALLBACK windowProc(HWND h, UINT msg, WPARAM w, LPARAM l)
             app->scrollWidth = size.cx;
             app->scrollX -= 5;
             if (app->scrollX < -app->scrollWidth)
-                app->scrollX = 81;
+            {
+                RECT bounds = compactTitleInterior(control(compact_Picture1));
+                app->scrollX = bounds.right - bounds.left;
+            }
             InvalidateRect(control(compact_Picture1), nullptr, FALSE);
         }
         return 0;
@@ -1906,6 +1980,7 @@ void initialize()
     cls.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
     cls.lpszClassName = L"StardiskPlayerCpp";
     RegisterClassExW(&cls);
+    app->taskbarButtonCreated = RegisterWindowMessageW(L"TaskbarButtonCreated");
     createMenu();
     RECT r{0, 0, 353, 462};
     AdjustWindowRectEx(&r, mainStyle, TRUE, 0);
@@ -1947,6 +2022,9 @@ void initialize()
     speed(100);
     setText(main_lblSysInfo, L"");
     app->showCaption = setting(L"View", L"ShowTrackInCaption", 0) == 1;
+    app->showTaskbarProgress = setting(L"View", L"ShowTaskbarProgress", 0) == 1;
+    CheckMenuItem(app->menu, menu_mnuShowTaskbarProgress,
+                  MF_BYCOMMAND | (app->showTaskbarProgress ? MF_CHECKED : MF_UNCHECKED));
     app->minimizeCompact = setting(L"View", L"MinimizeToCompact", 0) == 1;
     app->closeCompact = setting(L"View", L"CloseToCompact", 0) == 1;
     CheckMenuItem(app->menu, menu_mnuShowTrackInCaption, MF_BYCOMMAND | (app->showCaption ? MF_CHECKED : MF_UNCHECKED));
@@ -2014,6 +2092,8 @@ extern "C" void playerEntry()
         DispatchMessageW(&msg);
     }
     DestroyAcceleratorTable(accel);
+    if (app->taskbar)
+        app->taskbar->Release();
     if (app->folderClosed)
         DestroyIcon(app->folderClosed);
     if (app->folderOpen)

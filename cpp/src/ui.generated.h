@@ -58,6 +58,7 @@ compact_cmdVolDown = 153,
 compact_cmdVolUp = 154,
 compact_cmdReturnToMain = 155,
 compact_Picture1 = 156,
+menu_mnuShowTaskbarProgress = 157,
  menu_streamBase = 1000
 };
 struct ControlDef { int id,compact,kind,x,y,w,h; const wchar_t* text; const wchar_t* font; int points100,align,autosize; LONG back,fore; int tab; const wchar_t* tip; };
@@ -105,7 +106,7 @@ static const ControlDef controlDefs[] = {
 struct MenuItem { int id; const wchar_t* text; int flags; };
 static const MenuItem popup_mnuFile[] = {{menu_mnuRename,L"Переименовать выделенный файл\tF2",0},{menu_mnuMove,L"Переместить в...\tCtrl+X",0},{menu_mnuDelete,L"Удалить выделенный файл\tDel",0},{menu_mnuOpenLocation,L"Открыть расположение файла\tCtrl+E",0},{0,L"-",0},{menu_mnuSearch,L"Найти файл в текущей папке\tCtrl+F",0},{menu_mnuGoTo,L"Перейти к адресу...",0},{0,L"-",0},{menu_mnuAbout,L"О программе",0},{menu_mnuClose,L"Выйти",0}};
 static const MenuItem popup_mnuMode[] = {{menu_mnuShuffle,L"Случайный порядок",0},{menu_mnuRepeat,L"Повторять трек",0},{0,L"-",0},{menu_mnuReverse,L"Воспроизводить в обратном направлении",0}};
-static const MenuItem popup_mnuSep0[] = {{menu_mnuShowTrackInCaption,L"Название трека в заголовке",0},{menu_mnuMinimizeToCompact,L"Сворачивать в компактный режи",0},{menu_mnuCloseToCompact,L"Закрывать в компактный режим",0},{0,L"-",0},{menu_mnuGotoCompact,L"Перейти в компактный режим",0},{menu_mnuCompactVolume,L"Шаг громкости в компактном режиме",0},{menu_mnuRestoreCompact,L"Восстановить расположение компактного режима",0}};
+static const MenuItem popup_mnuSep0[] = {{menu_mnuShowTrackInCaption,L"Название трека в заголовке",0},{menu_mnuShowTaskbarProgress,L"Показывать прогресс воспроизведения на кнопке в панели задач",0},{menu_mnuMinimizeToCompact,L"Сворачивать в компактный режи",0},{menu_mnuCloseToCompact,L"Закрывать в компактный режим",0},{0,L"-",0},{menu_mnuGotoCompact,L"Перейти в компактный режим",0},{menu_mnuCompactVolume,L"Шаг громкости в компактном режиме",0},{menu_mnuRestoreCompact,L"Восстановить расположение компактного режима",0}};
 static const MenuItem popup_Streams[] = {{menu_AddStream,L"Добавить поток...\tCtrl+L",0}};
 struct MenuDef { const wchar_t* caption; const MenuItem* items; int count; bool streams; };
 static const MenuDef menuDefs[] = {

@@ -24,12 +24,12 @@ _Кстати, и оформление репозитория со всем эт
 
 ## Скачать
 
-[C++ v1.2.0 для Windows x64](https://github.com/Stardisk/Stardisk-s-player/releases/tag/v1.2.0):
+[C++ v1.2.1 для Windows x64](https://github.com/Stardisk/Stardisk-s-player/releases/tag/v1.2.1):
 
-- [stardisk.exe](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/stardisk.exe) — плеер.
-- [reverse.dll](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/reverse.dll) — необязательная поддержка реверса. Положите рядом с EXE и перезапустите плеер.
+- [stardisk.exe](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.1/stardisk.exe) — плеер.
+- [reverse.dll](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.1/reverse.dll) — необязательная поддержка реверса. Положите рядом с EXE и перезапустите плеер.
 
-[MIT License](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.0/LICENSE) также приложена к релизу.
+[MIT License](https://github.com/Stardisk/Stardisk-s-player/releases/download/v1.2.1/LICENSE) также приложена к релизу.
 
 Установка не нужна. Разместите файлы в папке с доступом на запись: плеер создаёт там INI с настройками. [Исторический релиз VB6](https://github.com/Stardisk/Stardisk-s-player/releases/tag/StardiskPlayer) остаётся доступен.
 

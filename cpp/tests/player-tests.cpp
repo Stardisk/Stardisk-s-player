@@ -96,6 +96,31 @@ int paintedVolumeNumberPixels()
     DeleteDC(dc);
     return visible;
 }
+bool compactProgressFitsFrame()
+{
+    HWND titleBox = control(compact_Picture1);
+    RECT frame{};
+    GetClientRect(titleBox, &frame);
+    HDC screen = GetDC(titleBox);
+    HDC dc = CreateCompatibleDC(screen);
+    HBITMAP bitmap = CreateCompatibleBitmap(screen, frame.right, frame.bottom);
+    ReleaseDC(titleBox, screen);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    RECT interior = frame;
+    DrawEdge(dc, &interior, EDGE_SUNKEN, BF_RECT | BF_ADJUST);
+    LONG y = (interior.top + interior.bottom) / 2;
+    COLORREF border = GetPixel(dc, interior.right, y);
+    int scrollX = app->scrollX;
+    app->scrollX = interior.right - interior.left - 1;
+    paintCompactTitle(titleBox, dc);
+    app->scrollX = scrollX;
+    bool fits = border != CLR_INVALID && GetPixel(dc, interior.right, y) == border &&
+                GetPixel(dc, interior.right - 2, y) == RGB(176, 176, 176);
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    return fits;
+}
 bool arrowKey(HWND target, UINT key, UINT message = WM_KEYDOWN)
 {
     MSG msg{};
@@ -186,8 +211,11 @@ extern "C" void logicTestEntry()
     check(GetMenuItemID(file, 0) == menu_mnuRename && GetMenuItemID(file, 1) == menu_mnuMove &&
               GetMenuItemID(file, 2) == menu_mnuDelete && GetMenuItemID(file, 9) == menu_mnuClose,
           L"Exact File menu order");
-    check(GetMenuItemID(view, 0) == menu_mnuShowTrackInCaption && GetMenuItemID(view, 6) == menu_mnuRestoreCompact,
-          L"Exact View menu order");
+    check(GetMenuItemID(view, 0) == menu_mnuShowTrackInCaption &&
+              GetMenuItemID(view, 1) == menu_mnuShowTaskbarProgress &&
+              equal(menuCaption(view, 1), L"Показывать прогресс воспроизведения на кнопке в панели задач") &&
+              GetMenuItemID(view, 7) == menu_mnuRestoreCompact,
+          L"Exact View menu order and taskbar progress caption");
     refreshStreams();
     check(GetMenuItemCount(app->streamsMenu) == 2 && GetMenuItemID(app->streamsMenu, 1) == menu_AddStream,
           L"Empty stream menu order");
@@ -372,6 +400,7 @@ extern "C" void logicTestEntry()
           L"Disable segment repeat and unlock time fields");
     command(main_chkRepeat);
     seek(app->playback.duration());
+    check(compactProgressFitsFrame(), L"Full compact progress and scrolling text respect the right frame edge");
     app->ended = true;
     tick();
     check(app->realPosition == 0 && !app->ended, L"Whole-track repeat restarts same track");
@@ -380,6 +409,15 @@ extern "C" void logicTestEntry()
     app->ended = true;
     tick();
     check(selectedIndex() != before, L"Natural completion advances when repeat is off");
+    command(menu_mnuShowTaskbarProgress);
+    check(app->showTaskbarProgress && (GetMenuState(view, menu_mnuShowTaskbarProgress, MF_BYCOMMAND) & MF_CHECKED) &&
+              setting(L"View", L"ShowTaskbarProgress", -1) == 1,
+          L"Taskbar progress toggle checks its menu item and saves the setting");
+    command(menu_mnuShowTaskbarProgress);
+    check(!app->showTaskbarProgress &&
+              !(GetMenuState(view, menu_mnuShowTaskbarProgress, MF_BYCOMMAND) & MF_CHECKED) &&
+              setting(L"View", L"ShowTaskbarProgress", -1) == 0,
+          L"Turning off taskbar progress clears its menu check and saves the setting");
     command(menu_mnuShowTrackInCaption);
     check(equal(windowText(app->main), leaf(app->current)), L"Track in window caption");
     command(menu_mnuShowTrackInCaption);
