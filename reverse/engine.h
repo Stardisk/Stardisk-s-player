@@ -16,6 +16,12 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+// Temporary workaround for the observed Source Reader read-ahead/seek race.
+// Build with REVERSE_CONTINUE_MEMORY_PROBE=0 to restore the original path.
+#ifndef REVERSE_CONTINUE_MEMORY_PROBE
+#define REVERSE_CONTINUE_MEMORY_PROBE 1
+#endif
 extern "C" HRESULT WINAPI MFCreateMFByteStreamOnStream(IStream*,IMFByteStream**);
 
 using Bytes = std::vector<unsigned char>;
@@ -30,6 +36,8 @@ void check(HRESULT hr, const char* what) {
 template<class T> void drop(T*& p) { if (p) p->Release(); p=nullptr; }
 struct Reader {
     IMFSourceReader* r=nullptr;
+    Bytes probePCM;
+    bool continueProbe=false,probeEnded=false;
     long long total=0;
     long long initialGap=0;
     double mp3Quantum=0;
@@ -47,9 +55,10 @@ struct Reader {
         HRESULT hr=MFCreateMFByteStreamOnStream(stream,&bytes); drop(stream);
         check(hr,"MF memory stream");
         hr=MFCreateSourceReaderFromByteStream(bytes,nullptr,&r); drop(bytes);
-        check(hr,"Open MP3 memory segment"); configure();
+        check(hr,"Open MP3 memory segment"); configure(REVERSE_CONTINUE_MEMORY_PROBE!=0);
     }
-    void configure() {
+    void configure(bool keepProbe=false) {
+        continueProbe=keepProbe;
         check(r->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS,FALSE),"Deselect");
         check(r->SetStreamSelection(MF_SOURCE_READER_FIRST_AUDIO_STREAM,TRUE),"Select audio");
         IMFMediaType* native=nullptr;
@@ -85,12 +94,20 @@ struct Reader {
             initialGap=std::max(0LL,tb-ta-(long long)a.size()/fmt.align());
             total-=initialGap;
         }
+        if(continueProbe) {
+            // Keep the two PCM probes instead of seeking this short stream back
+            // while MF may already be requesting its next compressed sample.
+            probePCM=std::move(a);
+            probePCM.insert(probePCM.end(),b.begin(),b.end());
+            return;
+        }
         PROPVARIANT zero; PropVariantInit(&zero); zero.vt=VT_I8; zero.hVal.QuadPart=0;
         check(r->SetCurrentPosition(GUID_NULL,zero),"Rewind decoder");
     }
     bool next(Bytes& b,long long& first) {
         DWORD flags=0; LONGLONG time=0; IMFSample* s=nullptr;
         check(r->ReadSample(MF_SOURCE_READER_FIRST_AUDIO_STREAM,0,nullptr,&flags,&time,&s),"Decode");
+        if(continueProbe) probeEnded=!!(flags & MF_SOURCE_READERF_ENDOFSTREAM);
         if(flags & MF_SOURCE_READERF_ERROR) { drop(s); throw std::runtime_error("Decoder stream error"); }
         if(flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) { drop(s); throw std::runtime_error("Audio format changed"); }
         b.clear(); first=llround((double)time*fmt.hz/10000000.0);
@@ -106,8 +123,8 @@ struct Reader {
         return !(flags & MF_SOURCE_READERF_ENDOFSTREAM) || !b.empty();
     }
     Bytes all() {
-        Bytes out,b; long long time;
-        while(next(b,time)) out.insert(out.end(),b.begin(),b.end());
+        Bytes out=std::move(probePCM),b; long long time;
+        while(!(continueProbe && probeEnded) && next(b,time)) out.insert(out.end(),b.begin(),b.end());
         total=(long long)out.size()/fmt.align(); return out;
     }
     Bytes range(long long lo,long long hi) {
@@ -115,6 +132,7 @@ struct Reader {
         PROPVARIANT v; PropVariantInit(&v); v.vt=VT_I8;
         v.hVal.QuadPart=std::max(0LL,lo+initialGap-fmt.hz)*10000000/fmt.hz;
         check(r->SetCurrentPosition(GUID_NULL,v),"Seek decoder");
+        continueProbe=false;probeEnded=false;probePCM.clear();
         Bytes out((size_t)(hi-lo)*fmt.align()),b; long long time,filled=lo;
         while(next(b,time)) {
             if(time>0) time-=initialGap;
